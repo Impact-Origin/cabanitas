@@ -1,0 +1,632 @@
+"use client";
+
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+
+type Step = "service" | "barber" | "datetime" | "details" | "confirmation";
+
+interface BookingData {
+  service: string;
+  barber: string;
+  date: Date | null;
+  time: string;
+  name: string;
+  phone: string;
+  email: string;
+  observations: string;
+  acceptTerms: boolean;
+  acceptMarketing: boolean;
+}
+
+const services = [
+  { id: "cabelo", name: "Cabelo" },
+  { id: "barba", name: "Barba" },
+  { id: "cabelo-barba", name: "Cabelo e Barba" },
+];
+
+const barbers = [
+  {
+    id: "edgar",
+    name: "Edgar",
+    title: "Barbeiro Mestre | Proprietário",
+    image: "/assets/edgar_placeholder.jpg",
+  },
+];
+
+export function BookingWizard() {
+  const [step, setStep] = useState<Step>("service");
+  const [bookingData, setBookingData] = useState<BookingData>({
+    service: "",
+    barber: "",
+    date: null,
+    time: "",
+    name: "",
+    phone: "",
+    email: "",
+    observations: "",
+    acceptTerms: false,
+    acceptMarketing: false,
+  });
+
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  // Available time slots
+  const timeSlots = {
+    morning: ["10:00", "11:30"],
+    afternoon: ["12:00", "14:30", "16:00"],
+    evening: [] as string[],
+  };
+
+  const handleServiceSelect = (serviceId: string) => {
+    setBookingData({ ...bookingData, service: serviceId });
+    setStep("barber");
+  };
+
+  const handleBarberSelect = (barberId: string) => {
+    setBookingData({ ...bookingData, barber: barberId });
+    setStep("datetime");
+  };
+
+  const handleDateSelect = (date: Date) => {
+    setSelectedDate(date);
+    setBookingData({ ...bookingData, date });
+  };
+
+  const handleTimeSelect = (time: string) => {
+    setBookingData({ ...bookingData, time });
+  };
+
+  const handleContinueToDetails = () => {
+    if (bookingData.date && bookingData.time) {
+      setStep("details");
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!bookingData.acceptTerms) {
+      alert("Por favor, aceite os termos e condições");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/bookings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(bookingData),
+      });
+
+      if (response.ok) {
+        setStep("confirmation");
+      } else {
+        alert("Erro ao criar marcação. Por favor, tente novamente.");
+      }
+    } catch (error) {
+      console.error("Error creating booking:", error);
+      alert("Erro ao criar marcação. Por favor, tente novamente.");
+    }
+  };
+
+  const goBack = () => {
+    const steps: Step[] = ["service", "barber", "datetime", "details", "confirmation"];
+    const currentIndex = steps.indexOf(step);
+    if (currentIndex > 0) {
+      setStep(steps[currentIndex - 1]);
+    }
+  };
+
+  // Calendar rendering
+  const renderCalendar = () => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
+
+    const days = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Adjust for Monday start (0 = Sunday, we want Monday = 0)
+    const adjustedStartDay = startingDayOfWeek === 0 ? 6 : startingDayOfWeek - 1;
+    
+    // Add empty cells for days before the first day of the month
+    for (let i = 0; i < adjustedStartDay; i++) {
+      days.push(<div key={`empty-${i}`} className="p-2"></div>);
+    }
+
+    // Add days of the month
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
+      const isPast = date < today;
+      const isSelected =
+        selectedDate &&
+        date.getDate() === selectedDate.getDate() &&
+        date.getMonth() === selectedDate.getMonth() &&
+        date.getFullYear() === selectedDate.getFullYear();
+
+      days.push(
+        <button
+          key={day}
+          onClick={() => !isPast && handleDateSelect(date)}
+          disabled={isPast}
+          className={`p-2 text-sm rounded-full text-center transition-all ${
+            isPast
+              ? "text-gray-300 cursor-not-allowed"
+              : isSelected
+              ? "bg-black text-white font-semibold"
+              : "hover:bg-gray-100 text-black"
+          }`}
+        >
+          {String(day).padStart(2, '0')}
+        </button>
+      );
+    }
+
+    return days;
+  };
+
+  const monthNames = [
+    "Janeiro",
+    "Fevereiro",
+    "Março",
+    "Abril",
+    "Maio",
+    "Junho",
+    "Julho",
+    "Agosto",
+    "Setembro",
+    "Outubro",
+    "Novembro",
+    "Dezembro",
+  ];
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <Card className="border border-gray-200 shadow-md rounded-xl overflow-hidden bg-white">
+        {/* Header */}
+        <CardHeader className="bg-white border-b border-gray-200 relative py-5 px-6">
+          {step !== "service" && step !== "confirmation" && (
+            <button
+              onClick={goBack}
+              className="absolute left-5 top-1/2 -translate-y-1/2 text-black hover:opacity-60 transition-opacity text-xl"
+            >
+              ←
+            </button>
+          )}
+          <CardTitle className="text-xl text-center text-black font-semibold">
+            Nova Marcação
+          </CardTitle>
+          <p className="text-center text-gray-500 mt-1 text-xs">
+            {step === "service" && "Escolha um serviço"}
+            {step === "barber" && "Escolha um profissional"}
+            {step === "datetime" && "Escolha um dia"}
+            {step === "details" && "Confirmar marcação"}
+            {step === "confirmation" && "Marcação confirmada"}
+          </p>
+        </CardHeader>
+
+        <CardContent className="p-0 bg-white overflow-hidden">
+          <AnimatePresence mode="wait">
+            {/* Step 1: Service Selection */}
+            {step === "service" && (
+              <motion.div
+                key="service"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
+                className="divide-y divide-gray-200"
+              >
+                {services.map((service, index) => (
+                  <motion.button
+                    key={service.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    onClick={() => handleServiceSelect(service.id)}
+                    className="w-full px-6 py-4 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <span className="text-base font-medium text-black">
+                      {service.name}
+                    </span>
+                  </motion.button>
+                ))}
+              </motion.div>
+            )}
+
+            {/* Step 2: Barber Selection */}
+            {step === "barber" && (
+              <motion.div
+                key="barber"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className="divide-y divide-gray-200">
+                <button
+                  onClick={() => handleBarberSelect("edgar")}
+                  className="w-full px-6 py-4 text-left hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-base text-black">Sem preferência</p>
+                    <span className="text-gray-300">›</span>
+                  </div>
+                </button>
+                {barbers.map((barber) => (
+                  <button
+                    key={barber.id}
+                    onClick={() => handleBarberSelect(barber.id)}
+                    className="w-full px-6 py-4 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 text-xs">
+                          {barber.name.charAt(0)}
+                        </div>
+                        <h3 className="text-base text-black">
+                          {barber.name}
+                        </h3>
+                      </div>
+                      <span className="text-gray-300">›</span>
+                    </div>
+                  </button>
+                ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* Step 3: Date & Time Selection */}
+            {step === "datetime" && (
+              <motion.div
+                key="datetime"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className="p-6 space-y-4">
+
+              {/* Calendar */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <button
+                    onClick={() =>
+                      setCurrentMonth(
+                        new Date(
+                          currentMonth.getFullYear(),
+                          currentMonth.getMonth() - 1
+                        )
+                      )
+                    }
+                    className="p-2 hover:bg-gray-50 rounded-full transition-colors text-black"
+                  >
+                    ←
+                  </button>
+                  <h3 className="text-lg font-semibold text-black">
+                    {monthNames[currentMonth.getMonth()]}{" "}
+                    {currentMonth.getFullYear()}
+                  </h3>
+                  <button
+                    onClick={() =>
+                      setCurrentMonth(
+                        new Date(
+                          currentMonth.getFullYear(),
+                          currentMonth.getMonth() + 1
+                        )
+                      )
+                    }
+                    className="p-2 hover:bg-gray-50 rounded-full transition-colors text-black"
+                  >
+                    →
+                  </button>
+                </div>
+
+                {/* Days of week */}
+                <div className="grid grid-cols-7 gap-1 mb-2">
+                  {["seg", "ter", "qua", "qui", "sex", "sáb", "dom"].map(
+                    (day) => (
+                      <div
+                        key={day}
+                        className="text-center text-xs font-medium text-gray-400 py-2"
+                      >
+                        {day}
+                      </div>
+                    )
+                  )}
+                </div>
+
+                {/* Calendar grid */}
+                <div className="grid grid-cols-7 gap-1">{renderCalendar()}</div>
+              </div>
+
+              {/* Time slots */}
+              {selectedDate && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  transition={{ duration: 0.4 }}
+                  className="space-y-4"
+                >
+                  <div className="border-t border-gray-200 pt-4">
+                    {/* Morning */}
+                    {timeSlots.morning.length > 0 && (
+                      <div className="mb-4">
+                        <h4 className="text-sm font-medium text-gray-600 mb-2 text-center">
+                          Manhã
+                        </h4>
+                        <div className="grid grid-cols-2 gap-2">
+                          {timeSlots.morning.map((time) => (
+                            <button
+                              key={time}
+                              onClick={() => handleTimeSelect(time)}
+                              className={`p-3 rounded-full border transition-all text-sm font-medium ${
+                                bookingData.time === time
+                                  ? "bg-black text-white border-black"
+                                  : "border-gray-200 hover:bg-gray-50"
+                              }`}
+                            >
+                              {time}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Afternoon */}
+                    {timeSlots.afternoon.length > 0 && (
+                      <div className="mb-4">
+                        <h4 className="text-sm font-medium text-gray-600 mb-2 text-center">
+                          Tarde
+                        </h4>
+                        <div className="grid grid-cols-2 gap-2">
+                          {timeSlots.afternoon.map((time) => (
+                            <button
+                              key={time}
+                              onClick={() => handleTimeSelect(time)}
+                              className={`p-3 rounded-full border transition-all text-sm font-medium ${
+                                bookingData.time === time
+                                  ? "bg-black text-white border-black"
+                                  : "border-gray-200 hover:bg-gray-50"
+                              }`}
+                            >
+                              {time}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Evening */}
+                    {timeSlots.evening.length > 0 && (
+                      <div className="mb-4">
+                        <h4 className="text-sm font-medium text-gray-600 mb-2 text-center">
+                          Noite
+                        </h4>
+                        <div className="grid grid-cols-2 gap-2">
+                          {timeSlots.evening.map((time) => (
+                            <button
+                              key={time}
+                              onClick={() => handleTimeSelect(time)}
+                              className={`p-3 rounded-full border transition-all text-sm font-medium ${
+                                bookingData.time === time
+                                  ? "bg-black text-white border-black"
+                                  : "border-gray-200 hover:bg-gray-50"
+                              }`}
+                            >
+                              {time}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <Button
+                    onClick={handleContinueToDetails}
+                    disabled={!bookingData.time}
+                    className="w-full py-4 text-base bg-gray-400 hover:bg-gray-500 text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Continuar
+                  </Button>
+                </motion.div>
+              )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* Step 4: Details Form */}
+            {step === "details" && (
+              <motion.form
+                key="details"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
+                onSubmit={handleSubmit}
+                className="space-y-4"
+              >
+              <div className="text-center space-y-1 py-4 border-b border-gray-200">
+                <p className="text-sm font-medium text-black">
+                  {bookingData.date?.toLocaleDateString("pt-PT", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}{" "}
+                  / {bookingData.time}
+                </p>
+                <p className="text-lg font-semibold text-black">
+                  {services.find((s) => s.id === bookingData.service)?.name}
+                </p>
+                <p className="text-sm text-gray-500">
+                  com {barbers.find((b) => b.id === bookingData.barber)?.name}
+                </p>
+              </div>
+
+              <div className="space-y-3 px-6">
+                <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+                  Dados da marcação
+                </h3>
+
+                <Input
+                  type="text"
+                  placeholder="Primeiro e último nome"
+                  value={bookingData.name}
+                  onChange={(e) =>
+                    setBookingData({ ...bookingData, name: e.target.value })
+                  }
+                  required
+                  className="w-full p-3 border border-gray-200 rounded-md focus:border-gray-400 text-sm"
+                />
+
+                <div className="flex gap-2">
+                  <div className="flex items-center gap-2 px-3 border border-gray-200 rounded-md bg-gray-50 text-sm">
+                    <span>🇵🇹</span>
+                    <span className="text-gray-400">▼</span>
+                  </div>
+                  <Input
+                    type="tel"
+                    placeholder="Telefone"
+                    value={bookingData.phone}
+                    onChange={(e) =>
+                      setBookingData({ ...bookingData, phone: e.target.value })
+                    }
+                    required
+                    className="flex-1 p-3 border border-gray-200 rounded-md focus:border-gray-400 text-sm"
+                  />
+                </div>
+
+                <Input
+                  type="email"
+                  placeholder="O seu e-mail"
+                  value={bookingData.email}
+                  onChange={(e) =>
+                    setBookingData({ ...bookingData, email: e.target.value })
+                  }
+                  required
+                  className="w-full p-3 border border-gray-200 rounded-md focus:border-gray-400 text-sm"
+                />
+
+                <Textarea
+                  placeholder="Observações"
+                  value={bookingData.observations}
+                  onChange={(e) =>
+                    setBookingData({
+                      ...bookingData,
+                      observations: e.target.value,
+                    })
+                  }
+                  className="w-full p-3 border border-gray-200 rounded-md focus:border-gray-400 min-h-[80px] text-sm"
+                />
+              </div>
+
+              <div className="px-6 pb-6">
+                <Button
+                  type="submit"
+                  className="w-full py-4 text-base bg-black hover:bg-black/80 text-white rounded-full"
+                >
+                  Confirmar
+                </Button>
+              </div>
+              </motion.form>
+            )}
+
+            {/* Step 5: Confirmation */}
+            {step === "confirmation" && (
+              <motion.div
+                key="confirmation"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.4 }}
+                className="text-center space-y-4 py-6"
+              >
+              <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto">
+                <svg
+                  className="w-8 h-8 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={3}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+
+              <div>
+                <h3 className="text-2xl font-semibold text-black mb-1">
+                  Marcação Confirmada!
+                </h3>
+                <p className="text-sm text-gray-600">
+                  Receberá um email de confirmação em breve.
+                </p>
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-lg space-y-2 text-left">
+                <p className="text-sm">
+                  <span className="font-medium">Serviço:</span>{" "}
+                  {services.find((s) => s.id === bookingData.service)?.name}
+                </p>
+                <p className="text-sm">
+                  <span className="font-medium">Barbeiro:</span>{" "}
+                  {barbers.find((b) => b.id === bookingData.barber)?.name}
+                </p>
+                <p className="text-sm">
+                  <span className="font-medium">Data:</span>{" "}
+                  {bookingData.date?.toLocaleDateString("pt-PT", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </p>
+                <p className="text-sm">
+                  <span className="font-medium">Hora:</span>{" "}
+                  {bookingData.time}
+                </p>
+              </div>
+
+              <Button
+                onClick={() => {
+                  setStep("service");
+                  setBookingData({
+                    service: "",
+                    barber: "",
+                    date: null,
+                    time: "",
+                    name: "",
+                    phone: "",
+                    email: "",
+                    observations: "",
+                    acceptTerms: false,
+                    acceptMarketing: false,
+                  });
+                  setSelectedDate(null);
+                }}
+                className="bg-black hover:bg-black/80 text-white px-6 py-3 rounded-full text-sm"
+              >
+                Fazer Nova Marcação
+              </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
