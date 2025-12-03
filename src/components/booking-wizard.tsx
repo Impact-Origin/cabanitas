@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { getActiveBarbers } from "@/config/barbers";
 
 type Step = "service" | "barber" | "datetime" | "details" | "confirmation";
 
@@ -29,16 +30,8 @@ const services = [
   { id: "cabelo-barba", name: "Cabelo e Barba" },
 ];
 
-const barbers = [
-  {
-    id: "edgar",
-    name: "Edgar",
-    title: "Barbeiro Mestre | Proprietário",
-    image: "/assets/edgar_placeholder.jpg",
-  },
-];
-
 export function BookingWizard() {
+  const barbers = getActiveBarbers();
   const [step, setStep] = useState<Step>("service");
   const [bookingData, setBookingData] = useState<BookingData>({
     service: "",
@@ -55,13 +48,8 @@ export function BookingWizard() {
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
-
-  // Available time slots
-  const timeSlots = {
-    morning: ["10:00", "11:30"],
-    afternoon: ["12:00", "14:30", "16:00"],
-    evening: [] as string[],
-  };
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
 
   const handleServiceSelect = (serviceId: string) => {
     setBookingData({ ...bookingData, service: serviceId });
@@ -75,7 +63,79 @@ export function BookingWizard() {
 
   const handleDateSelect = (date: Date) => {
     setSelectedDate(date);
-    setBookingData({ ...bookingData, date });
+    setBookingData({ ...bookingData, date, time: "" });
+  };
+
+  // Generate all possible time slots
+  const generateTimeSlots = () => {
+    const slots: string[] = [];
+    
+    // Morning slots: 08:30 - 13:00
+    let hour = 8;
+    let minute = 30;
+    while (hour < 13 || (hour === 13 && minute === 0)) {
+      slots.push(`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`);
+      minute += 30;
+      if (minute === 60) {
+        minute = 0;
+        hour += 1;
+      }
+    }
+    
+    // Afternoon slots: 15:00 - 18:30
+    hour = 15;
+    minute = 0;
+    while (hour < 18 || (hour === 18 && minute <= 30)) {
+      slots.push(`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`);
+      minute += 30;
+      if (minute === 60) {
+        minute = 0;
+        hour += 1;
+      }
+    }
+    
+    return slots;
+  };
+
+  // Fetch available slots when date is selected
+  useEffect(() => {
+    if (selectedDate && bookingData.barber) {
+      fetchAvailableSlots();
+    }
+  }, [selectedDate, bookingData.barber]);
+
+  const fetchAvailableSlots = async () => {
+    if (!selectedDate) return;
+    
+    setIsLoadingSlots(true);
+    try {
+      const formattedDate = selectedDate.toISOString().split("T")[0];
+      const barberName = bookingData.barber === "no-preference" 
+        ? "Sem Preferência" 
+        : barbers.find((b) => b.id === bookingData.barber)?.name || "Edgar";
+      
+      // Get all possible slots
+      const allSlots = generateTimeSlots();
+      
+      // Get bookings for this date
+      const response = await fetch(`/api/bookings?date=${formattedDate}`);
+      const data = await response.json();
+      
+      // Filter out booked slots for this barber
+      const dayBookings = (data.bookings || []).filter(
+        (b: any) => b.barber === barberName && b.status !== "cancelled"
+      );
+      
+      const bookedTimes = dayBookings.map((b: any) => b.time);
+      const available = allSlots.filter((slot) => !bookedTimes.includes(slot));
+      
+      setAvailableSlots(available);
+    } catch (error) {
+      console.error("Error fetching available slots:", error);
+      setAvailableSlots(generateTimeSlots());
+    } finally {
+      setIsLoadingSlots(false);
+    }
   };
 
   const handleTimeSelect = (time: string) => {
@@ -91,24 +151,47 @@ export function BookingWizard() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!bookingData.acceptTerms) {
-      alert("Por favor, aceite os termos e condições");
+    if (!bookingData.name || !bookingData.phone) {
+      alert("Por favor, preencha todos os campos obrigatórios");
       return;
     }
 
     try {
+      // Format date to YYYY-MM-DD
+      const formattedDate = bookingData.date
+        ? bookingData.date.toISOString().split("T")[0]
+        : "";
+
+      // Get service and barber names
+      const serviceName = services.find((s) => s.id === bookingData.service)?.name || "";
+      const barberName = bookingData.barber === "no-preference" 
+        ? "Sem Preferência" 
+        : barbers.find((b) => b.id === bookingData.barber)?.name || "";
+
       const response = await fetch("/api/bookings", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(bookingData),
+        body: JSON.stringify({
+          service: serviceName,
+          barber: barberName,
+          date: formattedDate,
+          time: bookingData.time,
+          name: bookingData.name,
+          phone: bookingData.phone,
+          email: bookingData.email || null,
+          observations: bookingData.observations || null,
+          created_by: "client",
+        }),
       });
+
+      const data = await response.json();
 
       if (response.ok) {
         setStep("confirmation");
       } else {
-        alert("Erro ao criar marcação. Por favor, tente novamente.");
+        alert(data.message || "Erro ao criar marcação. Por favor, tente novamente.");
       }
     } catch (error) {
       console.error("Error creating booking:", error);
@@ -360,83 +443,95 @@ export function BookingWizard() {
                   className="space-y-4"
                 >
                   <div className="border-t border-gray-200 pt-4">
-                    {/* Morning */}
-                    {timeSlots.morning.length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-sm font-medium text-gray-600 mb-2 text-center">
-                          Manhã
-                        </h4>
-                        <div className="grid grid-cols-2 gap-2">
-                          {timeSlots.morning.map((time) => (
-                            <button
-                              key={time}
-                              onClick={() => handleTimeSelect(time)}
-                              className={`p-3 rounded-full border transition-all text-sm font-medium ${
-                                bookingData.time === time
-                                  ? "bg-black text-white border-black"
-                                  : "border-gray-200 hover:bg-gray-50"
-                              }`}
-                            >
-                              {time}
-                            </button>
-                          ))}
-                        </div>
+                    <h4 className="text-sm font-medium text-gray-600 mb-3 text-center">
+                      Horários Disponíveis
+                    </h4>
+                    
+                    {isLoadingSlots ? (
+                      <div className="text-center py-8 text-gray-500">
+                        A carregar horários...
                       </div>
-                    )}
+                    ) : availableSlots.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        Sem horários disponíveis para esta data
+                      </div>
+                    ) : (
+                      <>
+                        {/* Morning slots */}
+                        {availableSlots.filter(slot => {
+                          const hour = parseInt(slot.split(':')[0]);
+                          return hour >= 8 && hour < 13;
+                        }).length > 0 && (
+                          <div className="mb-4">
+                            <h5 className="text-xs font-medium text-gray-500 mb-2 text-center">
+                              Manhã (08:30 - 13:00)
+                            </h5>
+                            <div className="grid grid-cols-3 gap-2">
+                              {availableSlots
+                                .filter(slot => {
+                                  const hour = parseInt(slot.split(':')[0]);
+                                  return hour >= 8 && hour < 13;
+                                })
+                                .map((time) => (
+                                  <button
+                                    key={time}
+                                    onClick={() => handleTimeSelect(time)}
+                                    className={`p-3 rounded-lg border transition-all text-sm font-medium ${
+                                      bookingData.time === time
+                                        ? "bg-black text-white border-black"
+                                        : "border-gray-200 hover:bg-gray-50 text-black"
+                                    }`}
+                                  >
+                                    {time}
+                                  </button>
+                                ))}
+                            </div>
+                          </div>
+                        )}
 
-                    {/* Afternoon */}
-                    {timeSlots.afternoon.length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-sm font-medium text-gray-600 mb-2 text-center">
-                          Tarde
-                        </h4>
-                        <div className="grid grid-cols-2 gap-2">
-                          {timeSlots.afternoon.map((time) => (
-                            <button
-                              key={time}
-                              onClick={() => handleTimeSelect(time)}
-                              className={`p-3 rounded-full border transition-all text-sm font-medium ${
-                                bookingData.time === time
-                                  ? "bg-black text-white border-black"
-                                  : "border-gray-200 hover:bg-gray-50"
-                              }`}
-                            >
-                              {time}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                        {/* Afternoon slots */}
+                        {availableSlots.filter(slot => {
+                          const hour = parseInt(slot.split(':')[0]);
+                          return hour >= 15;
+                        }).length > 0 && (
+                          <div className="mb-4">
+                            <h5 className="text-xs font-medium text-gray-500 mb-2 text-center">
+                              Tarde (15:00 - 18:30)
+                            </h5>
+                            <div className="grid grid-cols-3 gap-2">
+                              {availableSlots
+                                .filter(slot => {
+                                  const hour = parseInt(slot.split(':')[0]);
+                                  return hour >= 15;
+                                })
+                                .map((time) => (
+                                  <button
+                                    key={time}
+                                    onClick={() => handleTimeSelect(time)}
+                                    className={`p-3 rounded-lg border transition-all text-sm font-medium ${
+                                      bookingData.time === time
+                                        ? "bg-black text-white border-black"
+                                        : "border-gray-200 hover:bg-gray-50 text-black"
+                                    }`}
+                                  >
+                                    {time}
+                                  </button>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
-
-                    {/* Evening */}
-                    {timeSlots.evening.length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-sm font-medium text-gray-600 mb-2 text-center">
-                          Noite
-                        </h4>
-                        <div className="grid grid-cols-2 gap-2">
-                          {timeSlots.evening.map((time) => (
-                            <button
-                              key={time}
-                              onClick={() => handleTimeSelect(time)}
-                              className={`p-3 rounded-full border transition-all text-sm font-medium ${
-                                bookingData.time === time
-                                  ? "bg-black text-white border-black"
-                                  : "border-gray-200 hover:bg-gray-50"
-                              }`}
-                            >
-                              {time}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    
+                    <p className="text-xs text-gray-400 text-center mt-3">
+                      Horários de meia em meia hora • Fechado para almoço: 13:00-15:00
+                    </p>
                   </div>
 
                   <Button
                     onClick={handleContinueToDetails}
                     disabled={!bookingData.time}
-                    className="w-full py-4 text-base bg-gray-400 hover:bg-gray-500 text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="w-full py-4 text-base bg-black hover:bg-black/80 text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     Continuar
                   </Button>
@@ -507,16 +602,20 @@ export function BookingWizard() {
                   />
                 </div>
 
-                <Input
-                  type="email"
-                  placeholder="O seu e-mail"
-                  value={bookingData.email}
-                  onChange={(e) =>
-                    setBookingData({ ...bookingData, email: e.target.value })
-                  }
-                  required
-                  className="w-full p-3 border border-gray-200 rounded-md focus:border-gray-400 text-sm"
-                />
+                <div>
+                  <Input
+                    type="email"
+                    placeholder="O seu e-mail (opcional)"
+                    value={bookingData.email}
+                    onChange={(e) =>
+                      setBookingData({ ...bookingData, email: e.target.value })
+                    }
+                    className="w-full p-3 border border-gray-200 rounded-md focus:border-gray-400 text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Necessário para receber confirmação e lembretes
+                  </p>
+                </div>
 
                 <Textarea
                   placeholder="Observações"
