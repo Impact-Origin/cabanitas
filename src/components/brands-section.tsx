@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import Image from "next/image";
 
 const brands = [
-  { name: "American Crew", description: "Produtos Capilares Premium" },
-  { name: "Depot", description: "Excelência Italiana" },
-  { name: "Mühle", description: "Tradição Alemã" },
-  { name: "Antiga Barbearia de Bairro", description: "Herança Portuguesa" },
-  { name: "Papillon", description: "Estilo Londrino" },
+  "/brands/Wahl_Clipper_Corporation_Logo.png",
+  "/brands/Taylor_of_Old_Bond_Street_wordmark,_vertical.png",
+  "/brands/morfose-ossion-logo-png_seeklogo-430320.png",
+  "/brands/ec8dd61951caaf4ff2693d032973f95e.png",
+  "/brands/2d760ff915721350c6e8c625c0a9643e0f7772ca.png",
+  "/brands/d09a20f-122113-brand-logos_8-new-978x800.png",
 ];
 
 export function BrandsSection() {
@@ -56,19 +58,19 @@ export function BrandsSection() {
           style={{ scrollBehavior: "auto" }}
         >
           {/* Duplicate brands for seamless infinite scroll */}
-          {[...brands, ...brands, ...brands].map((brand, index) => (
+          {[...brands, ...brands, ...brands].map((brandImage, index) => (
             <div
               key={index}
-              className="flex-shrink-0 w-80 h-64 border-2 border-black/10 bg-zinc-50 hover:bg-white hover:border-black transition-all duration-300 flex flex-col items-center justify-center p-8 group"
+              className="flex-shrink-0 w-64 h-48 bg-white hover:bg-zinc-50 transition-all duration-300 flex items-center justify-center p-8 group"
             >
-              <div className="text-center">
-                <div className="text-6xl font-bold text-black/10 group-hover:text-black/20 transition-colors mb-4">
-                  LOGO
-                </div>
-                <h3 className="text-xl font-bold text-black mb-2">{brand.name}</h3>
-                <p className="text-sm text-black/60 uppercase tracking-wider">
-                  {brand.description}
-                </p>
+              <div className="relative w-full h-full flex items-center justify-center">
+                <Image
+                  src={brandImage}
+                  alt="Brand logo"
+                  fill
+                  className="object-contain"
+                  sizes="(max-width: 768px) 256px, 256px"
+                />
               </div>
             </div>
           ))}

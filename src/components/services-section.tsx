@@ -17,14 +17,14 @@ const services = [
   {
     id: 2,
     name: "Corte, Lavagem e Penteado",
-    duration: "40 min",
+    duration: "30 min",
     description: "Serviço completo incluindo corte, lavagem e finalização com penteado.",
     category: "haircut",
   },
   {
     id: 3,
     name: "Corte com Máquina (pentes 1, 2, 3 e 4)",
-    duration: "20 min",
+    duration: "30 min",
     description:
       "Corte prático e moderno com máquina, utilizando pentes de diferentes tamanhos.",
     category: "haircut",
@@ -32,7 +32,7 @@ const services = [
   {
     id: 4,
     name: "Corte com Máquina, Pente 0",
-    duration: "15 min",
+    duration: "30 min",
     description:
       "Corte rente com máquina, pente 0, para um visual clean e prático.",
     category: "haircut",
@@ -40,21 +40,21 @@ const services = [
   {
     id: 5,
     name: "Degradé",
-    duration: "35 min",
+    duration: "30 min",
     description: "Corte degradê moderno com transições suaves e acabamento impecável.",
     category: "haircut",
   },
   {
     id: 6,
     name: "Barba à Tesoura e Máquina",
-    duration: "20 min",
+    duration: "30 min",
     description: "Aparar e modelar a barba com tesoura e máquina para um visual cuidado.",
     category: "beard",
   },
   {
     id: 7,
     name: "Barba / Cabelo à Navalha",
-    duration: "25 min",
+    duration: "45 min",
     description: "Acabamento tradicional à navalha para barba ou cabelo, proporcionando precisão e estilo clássico.",
     category: "beard",
   },

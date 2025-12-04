@@ -94,3 +94,4 @@ export const BARBERS: Barber[] = [
 - **Nome exato**: O `name` deve ser exatamente igual ao usado nas marcações
 - **Sem reiniciar**: As alterações aparecem automaticamente, não precisa reiniciar o servidor
 
+

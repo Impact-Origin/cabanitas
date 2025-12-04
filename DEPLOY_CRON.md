@@ -282,3 +282,4 @@ Deve retornar:
 2. Verificar campo `reminder_sent` na base de dados
 3. Adicionar logs para debug
 
+

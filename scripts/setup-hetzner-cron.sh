@@ -61,3 +61,4 @@ echo "  Ver logs: tail -f /var/log/cabanitas-cron.log"
 echo "  Testar manualmente: /usr/local/bin/cabanitas-cron.sh"
 echo ""
 
+

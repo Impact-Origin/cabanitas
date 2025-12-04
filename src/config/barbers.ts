@@ -39,3 +39,4 @@ export const getBarberName = (id: string) => {
   return barber?.name || id;
 };
 
+
