@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import { CalendarIcon, Trash2 } from "lucide-react";
@@ -33,6 +34,8 @@ export default function VacationsPage() {
   const [startDate, setStartDate] = useState<Date>();
   const [endDate, setEndDate] = useState<Date>();
   const [selectedBarber, setSelectedBarber] = useState<string>("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [vacationToDelete, setVacationToDelete] = useState<Vacation | null>(null);
 
   const barbers = getActiveBarbers();
 
@@ -107,13 +110,16 @@ export default function VacationsPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Tem a certeza que deseja eliminar estas férias?")) {
-      return;
-    }
+  const handleDeleteClick = (vacation: Vacation) => {
+    setVacationToDelete(vacation);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!vacationToDelete) return;
 
     try {
-      const response = await fetch(`/api/vacations?id=${id}`, {
+      const response = await fetch(`/api/vacations?id=${vacationToDelete.id}`, {
         method: "DELETE",
       });
 
@@ -126,6 +132,8 @@ export default function VacationsPage() {
     } catch (error) {
       console.error("Error deleting vacation:", error);
       toast.error("Erro ao eliminar férias");
+    } finally {
+      setVacationToDelete(null);
     }
   };
 
@@ -293,7 +301,7 @@ export default function VacationsPage() {
                       </td>
                       <td className="px-4 md:px-6 lg:px-8 py-3 md:py-4 lg:py-5 whitespace-nowrap">
                         <Button
-                          onClick={() => handleDelete(vacation.id!)}
+                          onClick={() => handleDeleteClick(vacation)}
                           variant="ghost"
                           size="sm"
                           className="text-red-600 hover:text-red-800 min-h-[44px] md:min-h-[48px]"
@@ -310,6 +318,18 @@ export default function VacationsPage() {
         </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="Eliminar Férias"
+        description={`Tem a certeza que deseja eliminar as férias de ${vacationToDelete?.barber} de ${vacationToDelete ? format(new Date(vacationToDelete.start_date), "dd/MM/yyyy", { locale: pt }) : ""} a ${vacationToDelete ? format(new Date(vacationToDelete.end_date), "dd/MM/yyyy", { locale: pt }) : ""}? Esta ação não pode ser desfeita.`}
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        onConfirm={handleDeleteConfirm}
+        variant="destructive"
+      />
     </div>
   );
 }

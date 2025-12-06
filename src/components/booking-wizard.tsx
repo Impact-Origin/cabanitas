@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getActiveBarbers } from "@/config/barbers";
+import { toast } from "sonner";
 
 type Step = "service" | "barber" | "datetime" | "details" | "confirmation";
 
@@ -78,11 +79,21 @@ export function BookingWizard() {
       const vacationsResponse = await fetch(`/api/vacations?barber=${barberName}`);
       const vacationsData = await vacationsResponse.json();
       (vacationsData.vacations || []).forEach((v: any) => {
-        const start = new Date(v.start_date);
-        const end = new Date(v.end_date);
+        // Normalize dates to YYYY-MM-DD format (avoid timezone issues)
+        const startDateStr = v.start_date.includes('T') ? v.start_date.split('T')[0] : v.start_date;
+        const endDateStr = v.end_date.includes('T') ? v.end_date.split('T')[0] : v.end_date;
+        
+        // Parse dates and iterate through them
+        const start = new Date(startDateStr + 'T12:00:00'); // Use noon to avoid timezone issues
+        const end = new Date(endDateStr + 'T12:00:00');
         const current = new Date(start);
+        
         while (current <= end) {
-          blocked.add(current.toISOString().split("T")[0]);
+          // Format in local timezone
+          const year = current.getFullYear();
+          const month = String(current.getMonth() + 1).padStart(2, '0');
+          const day = String(current.getDate()).padStart(2, '0');
+          blocked.add(`${year}-${month}-${day}`);
           current.setDate(current.getDate() + 1);
         }
       });
@@ -93,7 +104,9 @@ export function BookingWizard() {
       (holidaysData.holidays || []).forEach((h: any) => {
         // Block holiday if barbershop is closed (is_working = false)
         if (!h.is_working) {
-          blocked.add(h.date);
+          // Normalize date format to YYYY-MM-DD
+          const dateStr = h.date.includes('T') ? h.date.split('T')[0] : h.date;
+          blocked.add(dateStr);
         }
       });
 
@@ -107,26 +120,33 @@ export function BookingWizard() {
 
   // Check if a date should be disabled
   const isDateDisabled = (date: Date): boolean => {
+    // Get date in local timezone (avoid UTC conversion issues)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+
+    // Get today in local timezone
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const checkDate = new Date(date);
-    checkDate.setHours(0, 0, 0, 0);
+    const todayYear = today.getFullYear();
+    const todayMonth = String(today.getMonth() + 1).padStart(2, '0');
+    const todayDay = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${todayYear}-${todayMonth}-${todayDay}`;
 
     // Block past dates
-    if (checkDate < today) {
+    if (dateStr < todayStr) {
       return true;
     }
 
     // Block Sundays (day 0)
-    if (checkDate.getDay() === 0) {
+    if (date.getDay() === 0) {
       return true;
     }
 
-    // Block Saturdays morning (day 6) - we'll handle this in time slots
-    // But we can still allow Saturday selection for afternoon slots
+    // Block Saturdays afternoon (day 6) - we'll handle this in time slots
+    // Saturday only opens in the morning (08:30-13:00)
 
     // Check if date is in blocked dates (vacations, closed holidays)
-    const dateStr = checkDate.toISOString().split("T")[0];
     if (blockedDates.has(dateStr)) {
       return true;
     }
@@ -182,7 +202,11 @@ export function BookingWizard() {
     
     setIsLoadingSlots(true);
     try {
-      const formattedDate = selectedDate.toISOString().split("T")[0];
+      // Format date to YYYY-MM-DD (use local timezone)
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      const day = String(selectedDate.getDate()).padStart(2, '0');
+      const formattedDate = `${year}-${month}-${day}`;
       const barberName = bookingData.barber === "no-preference" 
         ? "Sem Preferência" 
         : barbers.find((b) => b.id === bookingData.barber)?.name || "Edgar";
@@ -209,18 +233,18 @@ export function BookingWizard() {
         return;
       }
 
-      // Check if it's Saturday - block morning slots
+      // Check if it's Saturday - only morning slots (08:30-13:00)
       const selectedDay = selectedDate.getDay(); // 0 = Sunday, 6 = Saturday
       const isSaturday = selectedDay === 6;
       
       // Get all possible slots
       let allSlots = generateTimeSlots();
       
-      // Block Saturday morning slots (before 13:00)
+      // On Saturday, only show morning slots (08:30-13:00), block afternoon slots
       if (isSaturday) {
         allSlots = allSlots.filter(slot => {
           const hour = parseInt(slot.split(':')[0]);
-          return hour >= 15; // Only afternoon slots (15:00 onwards)
+          return hour < 13; // Only morning slots (before 13:00)
         });
       }
       
@@ -259,14 +283,19 @@ export function BookingWizard() {
     e.preventDefault();
     
     if (!bookingData.name || !bookingData.phone) {
-      alert("Por favor, preencha todos os campos obrigatórios");
+      toast.error("Por favor, preencha todos os campos obrigatórios");
       return;
     }
 
     try {
-      // Format date to YYYY-MM-DD
+      // Format date to YYYY-MM-DD (use local timezone)
       const formattedDate = bookingData.date
-        ? bookingData.date.toISOString().split("T")[0]
+        ? (() => {
+            const year = bookingData.date.getFullYear();
+            const month = String(bookingData.date.getMonth() + 1).padStart(2, '0');
+            const day = String(bookingData.date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          })()
         : "";
 
       // Get service and barber names
@@ -296,13 +325,14 @@ export function BookingWizard() {
       const data = await response.json();
 
       if (response.ok) {
+        toast.success("Marcação criada com sucesso!");
         setStep("confirmation");
       } else {
-        alert(data.message || "Erro ao criar marcação. Por favor, tente novamente.");
+        toast.error(data.message || "Erro ao criar marcação. Por favor, tente novamente.");
       }
     } catch (error) {
       console.error("Error creating booking:", error);
-      alert("Erro ao criar marcação. Por favor, tente novamente.");
+      toast.error("Erro ao criar marcação. Por favor, tente novamente.");
     }
   };
 

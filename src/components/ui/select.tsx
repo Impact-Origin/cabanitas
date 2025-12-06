@@ -105,6 +105,19 @@ function SelectItem({
   children,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Item>) {
+  // Ensure children is never NaN, null, or undefined
+  const safeChildren = React.useMemo(() => {
+    if (children === null || children === undefined) {
+      return '';
+    }
+    // Check if children is a number and if it's NaN
+    if (typeof children === 'number' && isNaN(children)) {
+      return '';
+    }
+    // Return children as-is for valid values (strings, numbers, React nodes)
+    return children;
+  }, [children]);
+
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
@@ -119,7 +132,7 @@ function SelectItem({
           <CheckIcon className="size-4" />
         </SelectPrimitive.ItemIndicator>
       </span>
-      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      <SelectPrimitive.ItemText>{safeChildren}</SelectPrimitive.ItemText>
     </SelectPrimitive.Item>
   )
 }

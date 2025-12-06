@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, parseISO, startOfWeek, endOfWeek, addDays } from "date-fns";
 import { pt } from "date-fns/locale";
 import { toast } from "sonner";
@@ -45,12 +46,24 @@ export default function AdminDashboard() {
   const [selectedBarber, setSelectedBarber] = useState<string>("all");
   const [blockedDates, setBlockedDates] = useState<Set<string>>(new Set());
   const [holidays, setHolidays] = useState<Set<string>>(new Set());
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [bookingToDelete, setBookingToDelete] = useState<Booking | null>(null);
   
   const activeBarbers = getActiveBarbers();
 
   // Load holidays (always, regardless of barber selection)
   useEffect(() => {
     loadHolidays();
+  }, []);
+
+  // Reload holidays when page gains focus (user returns from holidays page)
+  useEffect(() => {
+    const handleFocus = () => {
+      loadHolidays();
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
   // Load blocked dates when barber changes (vacations)
@@ -67,16 +80,68 @@ export default function AdminDashboard() {
     try {
       const closedHolidays = new Set<string>();
       const holidaysResponse = await fetch(`/api/holidays`);
+      
+      if (!holidaysResponse.ok) {
+        throw new Error(`HTTP error! status: ${holidaysResponse.status}`);
+      }
+      
       const holidaysData = await holidaysResponse.json();
-      (holidaysData.holidays || []).forEach((h: any) => {
+      console.log("📅 Loading holidays:", holidaysData);
+      
+      if (!holidaysData || !Array.isArray(holidaysData.holidays)) {
+        console.warn("⚠️ Invalid holidays data format:", holidaysData);
+        setHolidays(new Set());
+        return;
+      }
+      
+      holidaysData.holidays.forEach((h: any) => {
         // Block holiday if barbershop is closed (is_working = false)
-        if (!h.is_working) {
-          closedHolidays.add(h.date);
+        if (!h.is_working && h.date) {
+          // Date should already be normalized by API, but handle edge cases
+          let dateStr: string;
+          if (typeof h.date === 'string') {
+            // If it's a string, extract YYYY-MM-DD part
+            if (h.date.includes('T')) {
+              dateStr = h.date.split('T')[0];
+            } else if (h.date.includes(' ')) {
+              dateStr = h.date.split(' ')[0];
+            } else {
+              // Should already be YYYY-MM-DD
+              dateStr = h.date;
+            }
+          } else if (h.date) {
+            // If it's a Date object or number, convert to YYYY-MM-DD
+            const d = new Date(h.date);
+            if (!isNaN(d.getTime())) {
+              const year = d.getFullYear();
+              const month = String(d.getMonth() + 1).padStart(2, '0');
+              const day = String(d.getDate()).padStart(2, '0');
+              dateStr = `${year}-${month}-${day}`;
+            } else {
+              console.warn("⚠️ Invalid date format:", h.date);
+              return;
+            }
+          } else {
+            console.warn("⚠️ Missing date for holiday:", h);
+            return;
+          }
+          
+          // Validate date format
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            closedHolidays.add(dateStr);
+            console.log("🚫 Blocked holiday:", dateStr, "from:", h.date, "is_working:", h.is_working);
+          } else {
+            console.warn("⚠️ Invalid date format after normalization:", dateStr, "from:", h.date);
+          }
         }
       });
+      console.log("📅 Closed holidays set:", Array.from(closedHolidays).sort());
       setHolidays(closedHolidays);
     } catch (error) {
       console.error("Error loading holidays:", error);
+      toast.error("Erro ao carregar feriados");
+      // Set empty set on error to prevent blocking all dates
+      setHolidays(new Set());
     }
   };
 
@@ -87,11 +152,21 @@ export default function AdminDashboard() {
       const vacationsResponse = await fetch(`/api/vacations?barber=${barber}`);
       const vacationsData = await vacationsResponse.json();
       (vacationsData.vacations || []).forEach((v: any) => {
-        const start = new Date(v.start_date);
-        const end = new Date(v.end_date);
+        // Normalize dates to YYYY-MM-DD format (avoid timezone issues)
+        const startDateStr = v.start_date.includes('T') ? v.start_date.split('T')[0] : v.start_date;
+        const endDateStr = v.end_date.includes('T') ? v.end_date.split('T')[0] : v.end_date;
+        
+        // Parse dates and iterate through them
+        const start = new Date(startDateStr + 'T12:00:00'); // Use noon to avoid timezone issues
+        const end = new Date(endDateStr + 'T12:00:00');
         const current = new Date(start);
+        
         while (current <= end) {
-          blocked.add(current.toISOString().split("T")[0]);
+          // Format in local timezone
+          const year = current.getFullYear();
+          const month = String(current.getMonth() + 1).padStart(2, '0');
+          const day = String(current.getDate()).padStart(2, '0');
+          blocked.add(`${year}-${month}-${day}`);
           current.setDate(current.getDate() + 1);
         }
       });
@@ -103,26 +178,38 @@ export default function AdminDashboard() {
 
   // Check if a date should be disabled
   const isDateDisabled = (date: Date): boolean => {
+    // Get date in local timezone (avoid UTC conversion issues)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+
+    // Get today in local timezone
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const checkDate = new Date(date);
-    checkDate.setHours(0, 0, 0, 0);
+    const todayYear = today.getFullYear();
+    const todayMonth = String(today.getMonth() + 1).padStart(2, '0');
+    const todayDay = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${todayYear}-${todayMonth}-${todayDay}`;
 
     // Block past dates
-    if (checkDate < today) {
+    if (dateStr < todayStr) {
       return true;
     }
 
     // Block Sundays (day 0)
-    if (checkDate.getDay() === 0) {
+    if (date.getDay() === 0) {
       return true;
     }
 
-    const dateStr = checkDate.toISOString().split("T")[0];
-
     // Block holidays when barbershop is closed (always, regardless of barber)
     if (holidays.has(dateStr)) {
+      console.log("🚫 Date blocked (holiday):", dateStr, "Current holidays:", Array.from(holidays).sort());
       return true;
+    } else {
+      // Debug: log when checking a date that should be blocked
+      if (dateStr === "2026-08-15") {
+        console.log("🔍 Checking 2026-08-15 - holidays set:", Array.from(holidays).sort(), "has:", holidays.has(dateStr));
+      }
     }
 
     // Block barber vacations (only if a specific barber is selected)
@@ -174,6 +261,21 @@ export default function AdminDashboard() {
       setBlockedDates(new Set());
     }
   }, [newBooking.barber]);
+
+  // Reload holidays when modal opens (to get latest updates from holidays page)
+  useEffect(() => {
+    if (showNewBookingForm) {
+      // Force reload holidays when modal opens
+      loadHolidays();
+    }
+  }, [showNewBookingForm]);
+
+  // Also reload when booking step changes to step 1 (date selection)
+  useEffect(() => {
+    if (showNewBookingForm && bookingStep === 1) {
+      loadHolidays();
+    }
+  }, [showNewBookingForm, bookingStep]);
 
   // Fetch available slots when date or barber changes
   useEffect(() => {
@@ -270,7 +372,7 @@ export default function AdminDashboard() {
         return;
       }
 
-      // Check if it's Saturday - block morning slots
+      // Check if it's Saturday - only morning slots (08:30-13:00)
       const selectedDateObj = new Date(date);
       const selectedDay = selectedDateObj.getDay(); // 0 = Sunday, 6 = Saturday
       const isSaturday = selectedDay === 6;
@@ -278,11 +380,11 @@ export default function AdminDashboard() {
       // Get all possible slots
       let allSlots = generateTimeSlots();
       
-      // Block Saturday morning slots (before 13:00)
+      // On Saturday, only show morning slots (08:30-13:00), block afternoon slots
       if (isSaturday) {
         allSlots = allSlots.filter(slot => {
           const hour = parseInt(slot.split(':')[0]);
-          return hour >= 15; // Only afternoon slots (15:00 onwards)
+          return hour < 13; // Only morning slots (before 13:00)
         });
       }
       
@@ -366,13 +468,16 @@ export default function AdminDashboard() {
     return Array.from({ length: 7 }, (_, i) => addDays(start, i));
   };
 
-  const handleDeleteBooking = async (id: number) => {
-    if (!confirm("Tem a certeza que deseja eliminar esta marcação?")) {
-      return;
-    }
+  const handleDeleteBookingClick = (booking: Booking) => {
+    setBookingToDelete(booking);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteBookingConfirm = async () => {
+    if (!bookingToDelete) return;
 
     try {
-      const response = await fetch(`/api/bookings?id=${id}`, {
+      const response = await fetch(`/api/bookings?id=${bookingToDelete.id}`, {
         method: "DELETE",
       });
 
@@ -390,6 +495,8 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error("Error deleting booking:", error);
       toast.error("Erro ao eliminar marcação");
+    } finally {
+      setBookingToDelete(null);
     }
   };
 
@@ -418,7 +525,12 @@ export default function AdminDashboard() {
   };
 
   const getDayBookings = (date: Date) => {
-    const dateStr = format(date, "yyyy-MM-dd");
+    // Format date to YYYY-MM-DD (use local timezone)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+    
     let dayBookings = bookings.filter((b) => {
       // Handle both formats: "2025-11-29" and "2025-11-29T00:00:00.000Z"
       const bookingDate = b.date.split('T')[0]; // Get only the date part
@@ -529,10 +641,12 @@ export default function AdminDashboard() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos os Barbeiros</SelectItem>
-                    {activeBarbers.map((barber) => (
-                      <SelectItem key={barber.id} value={barber.name}>
-                        {barber.name}
-                      </SelectItem>
+                    {activeBarbers && activeBarbers.length > 0 && activeBarbers.map((barber) => (
+                      barber && barber.id && barber.name ? (
+                        <SelectItem key={barber.id} value={barber.name}>
+                          {barber.name || String(barber.id)}
+                        </SelectItem>
+                      ) : null
                     ))}
                   </SelectContent>
                 </Select>
@@ -843,7 +957,7 @@ export default function AdminDashboard() {
                         </Button>
                       </div>
                       <Button
-                        onClick={() => handleDeleteBooking(selectedBooking.id)}
+                        onClick={() => handleDeleteBookingClick(selectedBooking)}
                         variant="outline"
                         size="sm"
                         className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 text-xs md:text-sm lg:text-base px-3 md:px-4 lg:px-5 py-2 md:py-3 min-h-[44px] md:min-h-[48px]"
@@ -1011,19 +1125,35 @@ export default function AdminDashboard() {
                         <SelectValue placeholder="Selecione o barbeiro" />
                       </SelectTrigger>
                       <SelectContent>
-                        {activeBarbers.map((barber) => (
-                          <SelectItem key={barber.id} value={barber.name}>
-                            {barber.name}
-                          </SelectItem>
+                        {activeBarbers && activeBarbers.length > 0 && activeBarbers.map((barber) => (
+                          barber && barber.id && barber.name ? (
+                            <SelectItem key={barber.id} value={barber.name}>
+                              {barber.name || String(barber.id)}
+                            </SelectItem>
+                          ) : null
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div>
-                    <label className="block text-base font-medium text-gray-700 mb-2">
-                      Data
-                    </label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-base font-medium text-gray-700">
+                        Data
+                      </label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          loadHolidays();
+                          toast.info("Feriados atualizados");
+                        }}
+                        className="text-xs text-gray-500 hover:text-gray-700"
+                      >
+                        🔄 Atualizar
+                      </Button>
+                    </div>
                     <Popover>
                       <PopoverTrigger asChild>
                         <Button
@@ -1034,46 +1164,77 @@ export default function AdminDashboard() {
                         >
                           <CalendarIcon className="mr-2 h-5 w-5" />
                           {newBooking.date ? (
-                            format(new Date(newBooking.date), "PPP", { locale: pt })
+                            (() => {
+                              // Parse YYYY-MM-DD string to Date in local timezone
+                              const [year, month, day] = newBooking.date.split('-').map(Number);
+                              return format(new Date(year, month - 1, day), "PPP", { locale: pt });
+                            })()
                           ) : (
                             <span>Selecione a data</span>
                           )}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent className="w-auto p-0" align="start" onOpenAutoFocus={() => loadHolidays()}>
                         <Calendar
                           mode="single"
-                          selected={newBooking.date ? new Date(newBooking.date) : undefined}
+                          selected={newBooking.date ? (() => {
+                            // Parse YYYY-MM-DD string to Date in local timezone
+                            const [year, month, day] = newBooking.date.split('-').map(Number);
+                            return new Date(year, month - 1, day);
+                          })() : undefined}
                           onSelect={(date) => {
                             if (date) {
+                              // Format date to YYYY-MM-DD (use local timezone)
+                              const year = date.getFullYear();
+                              const month = String(date.getMonth() + 1).padStart(2, '0');
+                              const day = String(date.getDate()).padStart(2, '0');
+                              const dateStr = `${year}-${month}-${day}`;
                               setNewBooking({
                                 ...newBooking,
-                                date: format(date, "yyyy-MM-dd"),
+                                date: dateStr,
                                 time: ""
                               });
                             }
                           }}
                           locale={pt}
                           disabled={(date) => {
+                            // Get date in local timezone (avoid UTC conversion issues)
+                            const year = date.getFullYear();
+                            const month = String(date.getMonth() + 1).padStart(2, '0');
+                            const day = String(date.getDate()).padStart(2, '0');
+                            const dateStr = `${year}-${month}-${day}`;
+
+                            // Get today in local timezone
                             const today = new Date();
-                            today.setHours(0, 0, 0, 0);
-                            const checkDate = new Date(date);
-                            checkDate.setHours(0, 0, 0, 0);
-                            
+                            const todayYear = today.getFullYear();
+                            const todayMonth = String(today.getMonth() + 1).padStart(2, '0');
+                            const todayDay = String(today.getDate()).padStart(2, '0');
+                            const todayStr = `${todayYear}-${todayMonth}-${todayDay}`;
+
                             // Block past dates
-                            if (checkDate < today) return true;
+                            if (dateStr < todayStr) return true;
                             
                             // Block Sundays
-                            if (checkDate.getDay() === 0) return true;
-                            
-                            const dateStr = format(checkDate, "yyyy-MM-dd");
+                            if (date.getDay() === 0) return true;
                             
                             // Block holidays when barbershop is closed (always, regardless of barber)
-                            if (holidays.has(dateStr)) return true;
+                            const isBlocked = holidays.has(dateStr);
+                            if (isBlocked) {
+                              console.log("🚫 Date blocked (holiday in modal):", dateStr, "Current holidays:", Array.from(holidays).sort());
+                              return true;
+                            } else {
+                              // Debug: log when checking a date that should be blocked
+                              if (dateStr === "2026-08-15") {
+                                console.log("🔍 Modal checking 2026-08-15 - holidays set:", Array.from(holidays).sort(), "has:", holidays.has(dateStr));
+                              }
+                            }
                             
                             // Block if barber is on vacation (only if a specific barber is selected)
                             if (newBooking.barber && newBooking.barber !== "all") {
-                              if (blockedDates.has(dateStr)) return true;
+                              if (blockedDates.has(dateStr)) {
+                                console.log("🚫 Date blocked (vacation):", dateStr);
+                                return true;
+                              }
                             }
                             
                             return false;
@@ -1289,7 +1450,20 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* Delete Booking Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="Eliminar Marcação"
+        description={`Tem a certeza que deseja eliminar a marcação de ${bookingToDelete?.name} no dia ${bookingToDelete ? format(parseISO(bookingToDelete.date), "dd/MM/yyyy", { locale: pt }) : ""} às ${bookingToDelete?.time}? Esta ação não pode ser desfeita.`}
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        onConfirm={handleDeleteBookingConfirm}
+        variant="destructive"
+      />
     </div>
   );
 }
+
 

@@ -7,6 +7,7 @@ import { AdminNav } from "@/components/admin/admin-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import { Trash2 } from "lucide-react";
@@ -29,6 +30,8 @@ export default function HolidaysPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [hasInitialized, setHasInitialized] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [holidayToDelete, setHolidayToDelete] = useState<Holiday | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -44,24 +47,61 @@ export default function HolidaysPage() {
 
   // Initialize holidays automatically until 2030 (only once after holidays are loaded)
   useEffect(() => {
-    if (status === "authenticated" && !hasInitialized && !isLoading && holidays.length >= 0) {
-      initializeAllHolidays();
-      setHasInitialized(true);
+    // Wait for authentication and initial fetch to complete
+    if (status === "authenticated" && !isLoading && !hasInitialized && !isImporting) {
+      console.log("🔄 Checking if initialization needed...", { 
+        holidaysLength: holidays.length,
+        hasInitialized,
+        isLoading,
+        isImporting
+      });
+      
+      // If no holidays exist, initialize them
+      if (holidays.length === 0) {
+        console.log("🔄 No holidays found, starting initialization...");
+        initializeAllHolidays().then(() => {
+          console.log("✅ Initialization completed");
+          setHasInitialized(true);
+        }).catch((error) => {
+          console.error("❌ Initialization failed:", error);
+          setHasInitialized(true); // Set to true to prevent infinite retries
+        });
+      } else {
+        console.log("✅ Holidays already exist, skipping initialization");
+        setHasInitialized(true);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, isLoading, holidays.length, hasInitialized]);
+  }, [status, isLoading]);
 
   // Filter holidays by selected year
   useEffect(() => {
+    console.log("🔍 Filtering holidays:", { totalHolidays: holidays.length, selectedYear });
     if (holidays.length > 0) {
       const filtered = holidays.filter(holiday => {
-        const holidayYear = new Date(holiday.date).getFullYear();
-        return holidayYear === selectedYear;
+        // Extract year from date string (YYYY-MM-DD format)
+        const dateStr = holiday.date && holiday.date.includes('T') ? holiday.date.split('T')[0] : holiday.date;
+        if (!dateStr || !dateStr.includes('-')) {
+          console.warn("⚠️ Invalid date format:", holiday.date);
+          return false;
+        }
+        const holidayYear = parseInt(dateStr.split('-')[0], 10);
+        const matches = holidayYear === selectedYear;
+        if (matches) {
+          console.log("✅ Match:", holiday.name, dateStr, holidayYear);
+        }
+        return matches;
       });
-      // Sort by date
-      filtered.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      // Sort by date (using string comparison for YYYY-MM-DD format)
+      filtered.sort((a, b) => {
+        const dateA = a.date.includes('T') ? a.date.split('T')[0] : a.date;
+        const dateB = b.date.includes('T') ? b.date.split('T')[0] : b.date;
+        return dateA.localeCompare(dateB);
+      });
+      console.log("📅 Filtered holidays for", selectedYear, ":", filtered.length);
       setFilteredHolidays(filtered);
     } else {
+      console.log("📅 No holidays to filter");
       setFilteredHolidays([]);
     }
   }, [holidays, selectedYear]);
@@ -69,15 +109,36 @@ export default function HolidaysPage() {
   // Initialize all holidays from current year to 2030
   const initializeAllHolidays = async () => {
     try {
+      setIsImporting(true);
+      console.log("🔄 Starting holiday initialization...");
+      
+      // First, fetch current holidays to check what exists
+      const response = await fetch("/api/holidays");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      const currentHolidays = data.holidays || [];
+      console.log("📅 Current holidays in DB:", currentHolidays.length);
+      
       const currentYear = new Date().getFullYear();
       const endYear = 2030;
-      const existingDates = new Set(holidays.map(h => h.date));
+      
+      // Normalize existing dates to YYYY-MM-DD format for comparison
+      const existingDates = new Set(
+        currentHolidays.map((h: Holiday) => {
+          const date = h.date && h.date.includes('T') ? h.date.split('T')[0] : h.date;
+          return date;
+        })
+      );
+      console.log("📅 Existing dates:", Array.from(existingDates).slice(0, 5), "...");
+      
       const holidaysToAdd: Array<{ name: string; date: string; is_working: boolean }> = [];
 
       // Generate holidays for all years from current to 2030
       for (let year = currentYear; year <= endYear; year++) {
         const yearHolidays = generatePortugueseHolidays(year);
-        // Only add holidays that don't already exist
+        // Only add holidays that don't already exist (normalized comparison)
         yearHolidays.forEach(holiday => {
           if (!existingDates.has(holiday.date)) {
             holidaysToAdd.push(holiday);
@@ -86,9 +147,12 @@ export default function HolidaysPage() {
         });
       }
 
-      // Add missing holidays silently
+      console.log("📅 Holidays to add:", holidaysToAdd.length);
+
+      // Add missing holidays
       if (holidaysToAdd.length > 0) {
         let successCount = 0;
+        let failCount = 0;
         for (const holiday of holidaysToAdd) {
           try {
             const response = await fetch("/api/holidays", {
@@ -98,49 +162,101 @@ export default function HolidaysPage() {
             });
             if (response.ok) {
               successCount++;
+            } else {
+              const errorData = await response.json();
+              console.warn("⚠️ Failed to add holiday:", holiday, errorData);
+              failCount++;
             }
           } catch (error) {
-            // Silent fail
+            console.error("❌ Error adding holiday:", holiday, error);
+            failCount++;
           }
         }
+        console.log(`✅ Added ${successCount} holidays, ${failCount} failed`);
+        
         if (successCount > 0) {
-          // Refresh the list after a short delay
+          console.log("✅ Refreshing holidays list after adding", successCount, "holidays");
+          // Refresh the list after a short delay to ensure DB has committed
+          setTimeout(() => {
+            fetchHolidays();
+          }, 1500);
+        } else {
+          console.log("⚠️ No holidays were added, but refresh anyway");
           setTimeout(() => {
             fetchHolidays();
           }, 500);
         }
+      } else {
+        console.log("✅ All holidays already exist, refreshing list");
+        // Still refresh to make sure we have the latest data
+        fetchHolidays();
       }
     } catch (error) {
-      console.error("Error initializing holidays:", error);
+      console.error("❌ Error initializing holidays:", error);
+      toast.error("Erro ao inicializar feriados");
+    } finally {
+      setIsImporting(false);
     }
   };
 
   const fetchHolidays = async () => {
     try {
       setIsLoading(true);
+      console.log("🔄 Fetching holidays from API...");
       const response = await fetch("/api/holidays");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
-      if (response.ok) {
-        setHolidays(data.holidays || []);
+      console.log("📅 API Response:", {
+        hasData: !!data,
+        hasHolidays: !!(data && data.holidays),
+        holidaysType: Array.isArray(data?.holidays) ? 'array' : typeof data?.holidays,
+        holidaysLength: data?.holidays?.length || 0,
+        firstHoliday: data?.holidays?.[0],
+        fullData: data
+      });
+      
+      if (data && Array.isArray(data.holidays)) {
+        console.log("✅ Valid holidays array received, setting state...");
+        setHolidays(data.holidays);
+        console.log("📅 State updated with", data.holidays.length, "holidays");
+        if (data.holidays.length > 0) {
+          console.log("📅 Sample holidays:", data.holidays.slice(0, 3).map(h => ({ name: h.name, date: h.date, year: h.date?.split('-')[0] })));
+        }
       } else {
-        toast.error("Erro ao carregar feriados");
+        console.error("❌ Invalid holidays data format:", {
+          data,
+          type: typeof data,
+          hasHolidays: !!(data && data.holidays),
+          holidaysType: typeof data?.holidays
+        });
+        setHolidays([]);
       }
     } catch (error) {
-      console.error("Error fetching holidays:", error);
+      console.error("❌ Error fetching holidays:", error);
       toast.error("Erro ao carregar feriados");
+      setHolidays([]);
     } finally {
       setIsLoading(false);
+      console.log("✅ Fetch completed, isLoading set to false");
     }
   };
 
   const handleToggleWorking = async (holiday: Holiday) => {
     try {
+      // Normalize date to YYYY-MM-DD format
+      const normalizedDate = holiday.date.includes('T') 
+        ? holiday.date.split('T')[0] 
+        : holiday.date;
+      
       const response = await fetch("/api/holidays", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id: holiday.id, // Include ID to ensure we update the correct holiday
           name: holiday.name,
-          date: holiday.date,
+          date: normalizedDate,
           is_working: !holiday.is_working,
         }),
       });
@@ -158,13 +274,16 @@ export default function HolidaysPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Tem a certeza que deseja eliminar este feriado?")) {
-      return;
-    }
+  const handleDeleteClick = (holiday: Holiday) => {
+    setHolidayToDelete(holiday);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!holidayToDelete) return;
 
     try {
-      const response = await fetch(`/api/holidays?id=${id}`, {
+      const response = await fetch(`/api/holidays?id=${holidayToDelete.id}`, {
         method: "DELETE",
       });
 
@@ -177,6 +296,8 @@ export default function HolidaysPage() {
     } catch (error) {
       console.error("Error deleting holiday:", error);
       toast.error("Erro ao eliminar feriado");
+    } finally {
+      setHolidayToDelete(null);
     }
   };
 
@@ -237,9 +358,20 @@ export default function HolidaysPage() {
   const getAvailableYears = (): number[] => {
     const years = new Set<number>();
     holidays.forEach(holiday => {
-      const year = new Date(holiday.date).getFullYear();
-      years.add(year);
+      // Extract year from date string (YYYY-MM-DD format)
+      const dateStr = holiday.date.includes('T') ? holiday.date.split('T')[0] : holiday.date;
+      const year = parseInt(dateStr.split('-')[0], 10);
+      if (!isNaN(year)) {
+        years.add(year);
+      }
     });
+    // If no years found, add current year and next few years as options
+    if (years.size === 0) {
+      const currentYear = new Date().getFullYear();
+      for (let i = 0; i < 6; i++) {
+        years.add(currentYear + i);
+      }
+    }
     return Array.from(years).sort((a, b) => a - b);
   };
 
@@ -285,6 +417,21 @@ export default function HolidaysPage() {
                 <div className="text-sm md:text-base text-gray-600">
                   {filteredHolidays.length} feriado{filteredHolidays.length !== 1 ? "s" : ""} em {selectedYear}
                 </div>
+                {holidays.length === 0 && !isLoading && (
+                  <Button
+                    onClick={async () => {
+                      setHasInitialized(false);
+                      setIsImporting(true);
+                      await initializeAllHolidays();
+                      setHasInitialized(true);
+                      setIsImporting(false);
+                    }}
+                    disabled={isImporting}
+                    className="ml-auto"
+                  >
+                    {isImporting ? "A inicializar..." : "Inicializar Feriados"}
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -331,7 +478,12 @@ export default function HolidaysPage() {
                       </td>
                       <td className="px-4 md:px-6 lg:px-8 py-3 md:py-4 lg:py-5 whitespace-nowrap">
                         <div className="text-sm md:text-base lg:text-lg text-gray-900">
-                          {format(new Date(holiday.date), "PPP", { locale: pt })}
+                          {(() => {
+                            // Parse YYYY-MM-DD string to Date in local timezone
+                            const dateStr = holiday.date.includes('T') ? holiday.date.split('T')[0] : holiday.date;
+                            const [year, month, day] = dateStr.split('-').map(Number);
+                            return format(new Date(year, month - 1, day), "PPP", { locale: pt });
+                          })()}
                         </div>
                       </td>
                       <td className="px-4 md:px-6 lg:px-8 py-3 md:py-4 lg:py-5 whitespace-nowrap">
@@ -355,7 +507,7 @@ export default function HolidaysPage() {
                       </td>
                       <td className="px-4 md:px-6 lg:px-8 py-3 md:py-4 lg:py-5 whitespace-nowrap">
                         <Button
-                          onClick={() => handleDelete(holiday.id!)}
+                          onClick={() => handleDeleteClick(holiday)}
                           variant="ghost"
                           size="sm"
                           className="text-red-600 hover:text-red-800 min-h-[44px] md:min-h-[48px]"
@@ -372,6 +524,18 @@ export default function HolidaysPage() {
         </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="Eliminar Feriado"
+        description={`Tem a certeza que deseja eliminar o feriado "${holidayToDelete?.name}"? Esta ação não pode ser desfeita.`}
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        onConfirm={handleDeleteConfirm}
+        variant="destructive"
+      />
     </div>
   );
 }

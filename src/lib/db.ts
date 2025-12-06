@@ -402,33 +402,139 @@ export const holidayDb = {
     return result as Holiday[];
   },
 
-  // Get holiday by date
-  getByDate: async (date: string): Promise<Holiday | undefined> => {
+  // Normalize date to YYYY-MM-DD format (NEVER use Date parsing to avoid timezone issues)
+  normalizeDate: (date: string | null | undefined): string => {
+    // Handle null/undefined
+    if (!date) {
+      console.warn("normalizeDate called with null/undefined");
+      return '';
+    }
+    
+    // Convert to string if needed
+    const dateStr = String(date);
+    
+    // If date is already in YYYY-MM-DD format, return as is
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return dateStr;
+    }
+    
+    // If date has timezone info (ISO format), extract just the date part
+    if (dateStr.includes('T')) {
+      return dateStr.split('T')[0];
+    }
+    
+    // If date is in JavaScript Date string format (e.g., "Wed Jan 01 2025 00:00:00 GMT...")
+    // Extract the date parts: "Wed Jan 01 2025" -> "2025-01-01"
+    const dateStringMatch = dateStr.match(/(\w{3})\s+(\w{3})\s+(\d{1,2})\s+(\d{4})/);
+    if (dateStringMatch) {
+      const monthNames: { [key: string]: string } = {
+        'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+        'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
+        'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+      };
+      const month = monthNames[dateStringMatch[2]] || '01';
+      const day = dateStringMatch[3].padStart(2, '0');
+      const year = dateStringMatch[4];
+      return `${year}-${month}-${day}`;
+    }
+    
+    // If date has space (SQL format), extract just the date part
+    if (dateStr.includes(' ')) {
+      const parts = dateStr.split(' ');
+      // Try to find YYYY-MM-DD pattern in the parts
+      for (const part of parts) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(part)) {
+          return part;
+        }
+      }
+      // If no YYYY-MM-DD found, try to parse the first part
+      return parts[0];
+    }
+    
+    // If it's a valid date string in YYYY-MM-DD format but with extra characters, extract it
+    const match = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) {
+      return match[1];
+    }
+    
+    // Last resort: try to parse as Date and format (only if all else fails)
+    try {
+      const dateObj = new Date(dateStr);
+      if (!isNaN(dateObj.getTime())) {
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+    } catch (e) {
+      // Ignore
+    }
+    
+    // Last resort: return as is (shouldn't happen with proper data)
+    console.warn("Could not normalize date:", dateStr);
+    return dateStr;
+  },
+
+  // Get holiday by ID
+  getById: async (id: number): Promise<Holiday | undefined> => {
     const result = await sql`
       SELECT * FROM holidays 
-      WHERE date = ${date}
+      WHERE id = ${id}
     `;
     return result[0] as Holiday | undefined;
   },
 
+  // Get holiday by date
+  getByDate: async (date: string): Promise<Holiday | undefined> => {
+    const normalizedDate = holidayDb.normalizeDate(date);
+    const result = await sql`
+      SELECT * FROM holidays 
+      WHERE date = ${normalizedDate}
+    `;
+    return result[0] as Holiday | undefined;
+  },
+
+  // Update holiday by ID (only update is_working, don't change date or name)
+  update: async (id: number, holiday: Partial<Holiday>): Promise<void> => {
+    // Only update is_working to avoid accidentally changing the date
+    // If date needs to change, it should be a new holiday
+    await sql`
+      UPDATE holidays 
+      SET is_working = ${holiday.is_working ?? false}
+      WHERE id = ${id}
+    `;
+    
+    // Optionally update name if provided (but keep date unchanged)
+    if (holiday.name) {
+      await sql`
+        UPDATE holidays 
+        SET name = ${holiday.name}
+        WHERE id = ${id}
+      `;
+    }
+  },
+
   // Create or update holiday
   upsert: async (holiday: Holiday): Promise<number> => {
+    // Normalize the date to ensure consistent format
+    const normalizedDate = holidayDb.normalizeDate(holiday.date);
+    
     // First try to find existing holiday
-    const existing = await holidayDb.getByDate(holiday.date);
+    const existing = await holidayDb.getByDate(normalizedDate);
     
     if (existing) {
       // Update existing
       await sql`
         UPDATE holidays 
         SET name = ${holiday.name}, is_working = ${holiday.is_working}
-        WHERE date = ${holiday.date}
+        WHERE date = ${normalizedDate}
       `;
       return existing.id!;
     } else {
       // Insert new
       const result = await sql`
         INSERT INTO holidays (name, date, is_working)
-        VALUES (${holiday.name}, ${holiday.date}, ${holiday.is_working})
+        VALUES (${holiday.name}, ${normalizedDate}, ${holiday.is_working})
         RETURNING id
       `;
       return result[0].id;
