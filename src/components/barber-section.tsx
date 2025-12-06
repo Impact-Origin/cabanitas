@@ -1,4 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
+import Image from "next/image";
 
 export function BarberSection() {
   return (
@@ -11,10 +12,13 @@ export function BarberSection() {
         <div className="max-w-2xl mx-auto">
           <Card className="border-2 border-black/10 shadow-xl overflow-hidden rounded-none">
             <div className="aspect-square relative bg-gradient-to-br from-zinc-200 to-zinc-100">
-              {/* Image Placeholder */}
-              <div className="absolute inset-0 flex items-center justify-center text-6xl font-bold text-black/20">
-                EDGAR
-              </div>
+              <Image
+                src="/assets/edgar.jpeg"
+                alt="Edgar - Barbeiro Mestre"
+                fill
+                className="object-cover"
+                priority
+              />
             </div>
             <CardContent className="p-8 text-center bg-white">
               <h3 className="text-3xl font-bold text-black mb-2">Edgar</h3>

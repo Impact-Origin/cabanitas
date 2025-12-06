@@ -14,7 +14,7 @@ export const BARBERS: Barber[] = [
     id: "edgar",
     name: "Edgar",
     title: "Barbeiro Mestre | Proprietário",
-    image: "/assets/edgar_placeholder.jpg",
+    image: "/assets/edgar.jpeg",
     active: true,
   },
   // Para adicionar um novo barbeiro, descomente e preencha:
@@ -38,5 +38,6 @@ export const getBarberName = (id: string) => {
   const barber = getBarberById(id);
   return barber?.name || id;
 };
+
 
 

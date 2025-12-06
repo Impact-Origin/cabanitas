@@ -3,14 +3,13 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { signOut } from "next-auth/react";
-import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { AdminNav } from "@/components/admin/admin-nav";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, parseISO, startOfWeek, endOfWeek, addDays } from "date-fns";
 import { pt } from "date-fns/locale";
 import { toast } from "sonner";
@@ -44,8 +43,97 @@ export default function AdminDashboard() {
   const [bookingStep, setBookingStep] = useState(1);
   const [isCreatingBooking, setIsCreatingBooking] = useState(false);
   const [selectedBarber, setSelectedBarber] = useState<string>("all");
+  const [blockedDates, setBlockedDates] = useState<Set<string>>(new Set());
+  const [holidays, setHolidays] = useState<Set<string>>(new Set());
   
   const activeBarbers = getActiveBarbers();
+
+  // Load holidays (always, regardless of barber selection)
+  useEffect(() => {
+    loadHolidays();
+  }, []);
+
+  // Load blocked dates when barber changes (vacations)
+  useEffect(() => {
+    if (selectedBarber && selectedBarber !== "all") {
+      loadBarberVacations(selectedBarber);
+    } else {
+      setBlockedDates(new Set());
+    }
+  }, [selectedBarber]);
+
+  // Load holidays (barbershop closed days)
+  const loadHolidays = async () => {
+    try {
+      const closedHolidays = new Set<string>();
+      const holidaysResponse = await fetch(`/api/holidays`);
+      const holidaysData = await holidaysResponse.json();
+      (holidaysData.holidays || []).forEach((h: any) => {
+        // Block holiday if barbershop is closed (is_working = false)
+        if (!h.is_working) {
+          closedHolidays.add(h.date);
+        }
+      });
+      setHolidays(closedHolidays);
+    } catch (error) {
+      console.error("Error loading holidays:", error);
+    }
+  };
+
+  // Load blocked dates (vacations for specific barber)
+  const loadBarberVacations = async (barber: string) => {
+    try {
+      const blocked = new Set<string>();
+      const vacationsResponse = await fetch(`/api/vacations?barber=${barber}`);
+      const vacationsData = await vacationsResponse.json();
+      (vacationsData.vacations || []).forEach((v: any) => {
+        const start = new Date(v.start_date);
+        const end = new Date(v.end_date);
+        const current = new Date(start);
+        while (current <= end) {
+          blocked.add(current.toISOString().split("T")[0]);
+          current.setDate(current.getDate() + 1);
+        }
+      });
+      setBlockedDates(blocked);
+    } catch (error) {
+      console.error("Error loading blocked dates:", error);
+    }
+  };
+
+  // Check if a date should be disabled
+  const isDateDisabled = (date: Date): boolean => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkDate = new Date(date);
+    checkDate.setHours(0, 0, 0, 0);
+
+    // Block past dates
+    if (checkDate < today) {
+      return true;
+    }
+
+    // Block Sundays (day 0)
+    if (checkDate.getDay() === 0) {
+      return true;
+    }
+
+    const dateStr = checkDate.toISOString().split("T")[0];
+
+    // Block holidays when barbershop is closed (always, regardless of barber)
+    if (holidays.has(dateStr)) {
+      return true;
+    }
+
+    // Block barber vacations (only if a specific barber is selected)
+    if (selectedBarber && selectedBarber !== "all") {
+      if (blockedDates.has(dateStr)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
 
   // New booking form state
   const [newBooking, setNewBooking] = useState({
@@ -77,6 +165,15 @@ export default function AdminDashboard() {
       }
     }
   }, [status, currentMonth, viewMode]);
+
+  // Load blocked dates when barber changes in new booking form
+  useEffect(() => {
+    if (newBooking.barber && newBooking.barber !== "all") {
+      loadBarberVacations(newBooking.barber);
+    } else {
+      setBlockedDates(new Set());
+    }
+  }, [newBooking.barber]);
 
   // Fetch available slots when date or barber changes
   useEffect(() => {
@@ -151,8 +248,43 @@ export default function AdminDashboard() {
 
   const fetchAvailableSlots = async (date: string, barber: string) => {
     try {
+      // Check if barber is on vacation
+      const vacationsResponse = await fetch(`/api/vacations?barber=${barber}&startDate=${date}&endDate=${date}`);
+      const vacationsData = await vacationsResponse.json();
+      const isOnVacation = (vacationsData.vacations || []).some((v: any) => {
+        const start = new Date(v.start_date);
+        const end = new Date(v.end_date);
+        const checkDate = new Date(date);
+        return checkDate >= start && checkDate <= end;
+      });
+
+      // Check if it's a holiday and barbershop is closed
+      const holidaysResponse = await fetch(`/api/holidays`);
+      const holidaysData = await holidaysResponse.json();
+      const holiday = (holidaysData.holidays || []).find((h: any) => h.date === date);
+      const isHolidayClosed = holiday && !holiday.is_working;
+
+      // If barber is on vacation or it's a closed holiday, no slots available
+      if (isOnVacation || isHolidayClosed) {
+        setAvailableSlots([]);
+        return;
+      }
+
+      // Check if it's Saturday - block morning slots
+      const selectedDateObj = new Date(date);
+      const selectedDay = selectedDateObj.getDay(); // 0 = Sunday, 6 = Saturday
+      const isSaturday = selectedDay === 6;
+      
       // Get all possible slots
-      const allSlots = generateTimeSlots();
+      let allSlots = generateTimeSlots();
+      
+      // Block Saturday morning slots (before 13:00)
+      if (isSaturday) {
+        allSlots = allSlots.filter(slot => {
+          const hour = parseInt(slot.split(':')[0]);
+          return hour >= 15; // Only afternoon slots (15:00 onwards)
+        });
+      }
       
       // Get bookings for this date and barber
       const response = await fetch(`/api/bookings?date=${date}`);
@@ -168,7 +300,7 @@ export default function AdminDashboard() {
       setAvailableSlots(available);
     } catch (error) {
       console.error("Error fetching available slots:", error);
-      setAvailableSlots(generateTimeSlots());
+      setAvailableSlots([]);
     }
   };
 
@@ -312,9 +444,9 @@ export default function AdminDashboard() {
     const emptyDays = Array((firstDayOfWeek + 6) % 7).fill(null);
 
     return (
-      <div className="grid grid-cols-7 gap-2">
+      <div className="grid grid-cols-7 gap-2 md:gap-3 lg:gap-4">
         {["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map((day) => (
-          <div key={day} className="text-center text-sm font-medium text-gray-600 py-2">
+          <div key={day} className="text-center text-sm md:text-base lg:text-lg font-medium text-gray-600 py-2 md:py-3">
             {day}
           </div>
         ))}
@@ -325,24 +457,28 @@ export default function AdminDashboard() {
           const dayBookings = getDayBookings(day);
           const isSelected = isSameDay(day, selectedDate);
           const isToday = isSameDay(day, new Date());
+          const isDisabled = isDateDisabled(day);
 
           return (
             <button
               key={day.toISOString()}
-              onClick={() => setSelectedDate(day)}
-              className={`aspect-square p-2 rounded-lg border transition-all ${
-                isSelected
+              onClick={() => !isDisabled && setSelectedDate(day)}
+              disabled={isDisabled}
+              className={`aspect-square p-2 md:p-3 lg:p-4 rounded-lg border-2 transition-all min-h-[48px] md:min-h-[64px] lg:min-h-[80px] ${
+                isDisabled
+                  ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-50"
+                  : isSelected
                   ? "bg-black text-white border-black"
                   : isToday
                   ? "bg-gray-100 border-gray-300"
-                  : "border-gray-200 hover:bg-gray-50"
+                  : "border-gray-200 hover:bg-gray-50 hover:border-gray-300"
               }`}
             >
-              <div className="text-sm font-medium">{format(day, "d")}</div>
-              {dayBookings.length > 0 && (
-                <div className="mt-1">
+              <div className="text-sm md:text-base lg:text-lg font-medium">{format(day, "d")}</div>
+              {dayBookings.length > 0 && !isDisabled && (
+                <div className="mt-1 md:mt-2">
                   <div
-                    className={`text-xs font-semibold ${
+                    className={`text-xs md:text-sm lg:text-base font-semibold ${
                       isSelected ? "text-white" : "text-black"
                     }`}
                   >
@@ -374,92 +510,101 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Image
-                src="/assets/cabanitas_logo.png"
-                alt="Barbearia Cabanitas"
-                width={150}
-                height={75}
-                className="h-10 w-auto"
-              />
-              <h1 className="text-xl font-bold text-black">Painel de Administração</h1>
-            </div>
-            <div className="flex items-center gap-4">
-              {/* Barber Filter Dropdown */}
-              <Select
-                value={selectedBarber}
-                onValueChange={setSelectedBarber}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Barbeiro" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os Barbeiros</SelectItem>
-                  {activeBarbers.map((barber) => (
-                    <SelectItem key={barber.id} value={barber.name}>
-                      {barber.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+      <AdminNav />
 
-              <Button
-                onClick={() => {
-                  setShowNewBookingForm(true);
-                  setBookingStep(1);
-                }}
-                className="bg-black hover:bg-black/80 text-white text-lg px-8 py-6 font-bold"
-                size="lg"
-              >
-                + Nova Marcação
-              </Button>
-              <span className="text-sm text-gray-600">Olá, {session.user?.name}</span>
-              <Button
-                onClick={() => signOut({ callbackUrl: "/" })}
-                variant="outline"
-                className="text-sm"
-              >
-                Sair
-              </Button>
+      <div className="container mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-6 lg:py-8">
+        {/* Dashboard Controls Bar */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 md:p-5 lg:p-6 mb-4 md:mb-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            {/* Left: Filter and New Booking Button */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 md:gap-4">
+              {/* Barber Filter */}
+              <div className="flex-1 sm:flex-initial">
+                <label className="block text-xs md:text-sm font-medium text-gray-700 mb-1.5 md:mb-2">
+                  Filtrar por Barbeiro
+                </label>
+                <Select value={selectedBarber} onValueChange={setSelectedBarber}>
+                  <SelectTrigger className="w-full sm:w-[200px] md:w-[220px] lg:w-[240px] h-[42px] md:h-[46px] text-sm md:text-base border-gray-300 bg-white hover:bg-gray-50">
+                    <SelectValue placeholder="Selecionar barbeiro" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os Barbeiros</SelectItem>
+                    {activeBarbers.map((barber) => (
+                      <SelectItem key={barber.id} value={barber.name}>
+                        {barber.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* New Booking Button */}
+              <div className="flex-1 sm:flex-initial">
+                <label className="block text-xs md:text-sm font-medium text-gray-700 mb-1.5 md:mb-2 opacity-0 pointer-events-none">
+                  Ação
+                </label>
+                <Button
+                  onClick={() => {
+                    setShowNewBookingForm(true);
+                    setBookingStep(1);
+                  }}
+                  className="w-full sm:w-auto bg-black hover:bg-black/90 text-white text-sm md:text-base lg:text-lg px-5 md:px-7 lg:px-8 py-2.5 md:py-3 font-semibold h-[42px] md:h-[46px] shadow-sm hover:shadow-md transition-all"
+                  size="sm"
+                >
+                  + Nova Marcação
+                </Button>
+              </div>
             </div>
           </div>
         </div>
-      </header>
 
-      <div className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 lg:gap-8">
           {/* Calendar */}
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-black">
-                  {viewMode === "day" 
-                    ? format(currentMonth, "MMMM yyyy", { locale: pt })
-                    : `Semana de ${format(startOfWeek(selectedDate, { weekStartsOn: 1 }), "d MMM", { locale: pt })}`
-                  }
-                </h2>
-                <div className="flex gap-2">
-                  <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-                    <Button
-                      onClick={() => setViewMode("day")}
-                      variant={viewMode === "day" ? "default" : "ghost"}
-                      size="sm"
-                      className={viewMode === "day" ? "bg-black text-white" : ""}
-                    >
-                      Mês
-                    </Button>
-                    <Button
-                      onClick={() => setViewMode("week")}
-                      variant={viewMode === "week" ? "default" : "ghost"}
-                      size="sm"
-                      className={viewMode === "week" ? "bg-black text-white" : ""}
-                    >
-                      Semana
-                    </Button>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 md:p-6 lg:p-8">
+              {/* Calendar Header */}
+              <div className="mb-6 md:mb-8">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+                  <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold text-black">
+                    {viewMode === "day" 
+                      ? format(currentMonth, "MMMM yyyy", { locale: pt })
+                      : `Semana de ${format(startOfWeek(selectedDate, { weekStartsOn: 1 }), "d MMM", { locale: pt })}`
+                    }
+                  </h2>
+                  
+                  {/* View Mode Toggle */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex gap-1 bg-gray-100 rounded-lg p-1 border border-gray-200">
+                      <Button
+                        onClick={() => setViewMode("day")}
+                        variant="ghost"
+                        size="sm"
+                        className={`text-xs md:text-sm lg:text-base px-3 md:px-4 lg:px-5 py-2 md:py-2.5 h-[36px] md:h-[40px] font-medium transition-all ${
+                          viewMode === "day" 
+                            ? "bg-black text-white hover:bg-black/90 shadow-sm" 
+                            : "text-gray-700 hover:bg-gray-200"
+                        }`}
+                      >
+                        Mês
+                      </Button>
+                      <Button
+                        onClick={() => setViewMode("week")}
+                        variant="ghost"
+                        size="sm"
+                        className={`text-xs md:text-sm lg:text-base px-3 md:px-4 lg:px-5 py-2 md:py-2.5 h-[36px] md:h-[40px] font-medium transition-all ${
+                          viewMode === "week" 
+                            ? "bg-black text-white hover:bg-black/90 shadow-sm" 
+                            : "text-gray-700 hover:bg-gray-200"
+                        }`}
+                      >
+                        Semana
+                      </Button>
+                    </div>
                   </div>
+                </div>
+
+                {/* Navigation Buttons */}
+                <div className="flex items-center justify-between gap-2 md:gap-3">
                   <Button
                     onClick={() => {
                       if (viewMode === "week") {
@@ -472,9 +617,11 @@ export default function AdminDashboard() {
                     }}
                     variant="outline"
                     size="sm"
+                    className="text-xs md:text-sm lg:text-base px-4 md:px-5 lg:px-6 py-2 md:py-2.5 h-[40px] md:h-[44px] border-gray-300 hover:bg-gray-50 font-medium"
                   >
                     ← Anterior
                   </Button>
+                  
                   <Button
                     onClick={() => {
                       setCurrentMonth(new Date());
@@ -482,9 +629,11 @@ export default function AdminDashboard() {
                     }}
                     variant="outline"
                     size="sm"
+                    className="text-xs md:text-sm lg:text-base px-5 md:px-6 lg:px-8 py-2 md:py-2.5 h-[40px] md:h-[44px] border-gray-300 hover:bg-gray-50 font-medium bg-white"
                   >
                     Hoje
                   </Button>
+                  
                   <Button
                     onClick={() => {
                       if (viewMode === "week") {
@@ -497,8 +646,9 @@ export default function AdminDashboard() {
                     }}
                     variant="outline"
                     size="sm"
+                    className="text-xs md:text-sm lg:text-base px-4 md:px-5 lg:px-6 py-2 md:py-2.5 h-[40px] md:h-[44px] border-gray-300 hover:bg-gray-50 font-medium"
                   >
-                    Próximo →
+                    Seguinte →
                   </Button>
                 </div>
               </div>
@@ -512,17 +662,17 @@ export default function AdminDashboard() {
                     const isToday = isSameDay(day, new Date());
                     
                     return (
-                      <div key={day.toISOString()} className={`border rounded-lg p-4 ${isToday ? "border-black bg-gray-50" : "border-gray-200"}`}>
-                        <div className="flex items-center justify-between mb-3">
+                      <div key={day.toISOString()} className={`border-2 rounded-lg p-4 md:p-6 lg:p-8 ${isToday ? "border-black bg-gray-50" : "border-gray-200"}`}>
+                        <div className="flex items-center justify-between mb-3 md:mb-4">
                           <div>
-                            <h3 className="font-bold text-lg text-black">
+                            <h3 className="font-bold text-lg md:text-xl lg:text-2xl text-black">
                               {format(day, "EEEE", { locale: pt })}
                             </h3>
-                            <p className="text-sm text-gray-600">
+                            <p className="text-sm md:text-base lg:text-lg text-gray-600">
                               {format(day, "d 'de' MMMM", { locale: pt })}
                             </p>
                           </div>
-                          <span className="text-sm font-medium text-gray-600">
+                          <span className="text-sm md:text-base lg:text-lg font-medium text-gray-600">
                             {dayBookings.length} marcação{dayBookings.length !== 1 ? "ões" : ""}
                           </span>
                         </div>
@@ -530,19 +680,19 @@ export default function AdminDashboard() {
                         {dayBookings.length === 0 ? (
                           <p className="text-gray-400 text-sm text-center py-4">Sem marcações</p>
                         ) : (
-                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-2 md:gap-3">
                             {dayBookings
                               .sort((a, b) => a.time.localeCompare(b.time))
                               .map((booking) => (
                                 <button
                                   key={booking.id}
                                   onClick={() => setSelectedBooking(booking)}
-                                  className="text-left border border-gray-200 rounded-lg p-3 hover:border-black transition-colors"
+                                  className="text-left border-2 border-gray-200 rounded-lg p-3 md:p-4 lg:p-5 hover:border-black transition-colors min-h-[80px] md:min-h-[100px]"
                                 >
-                                  <p className="font-bold text-black text-sm mb-1">{booking.time}</p>
-                                  <p className="text-xs text-gray-700 font-medium truncate">{booking.name}</p>
-                                  <p className="text-xs text-gray-500 truncate">✂️ {booking.barber}</p>
-                                  <p className="text-xs text-gray-500 truncate">{booking.service}</p>
+                                  <p className="font-bold text-black text-sm md:text-base lg:text-lg mb-1 md:mb-2">{booking.time}</p>
+                                  <p className="text-xs md:text-sm lg:text-base text-gray-700 font-medium truncate mb-1">{booking.name}</p>
+                                  <p className="text-xs md:text-sm text-gray-500 truncate">✂️ {booking.barber}</p>
+                                  <p className="text-xs md:text-sm text-gray-500 truncate">{booking.service}</p>
                                 </button>
                               ))}
                           </div>
@@ -557,32 +707,32 @@ export default function AdminDashboard() {
 
           {/* Bookings List */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 sticky top-4">
-              <h3 className="text-lg font-bold text-black mb-4">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 md:p-6 lg:p-8 sticky top-4">
+              <h3 className="text-lg md:text-2xl lg:text-3xl font-bold text-black mb-4 md:mb-6">
                 Marcações - {format(selectedDate, "d 'de' MMMM", { locale: pt })}
               </h3>
 
               {selectedDateBookings.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">
+                <p className="text-gray-500 text-center py-8 md:py-10 text-sm md:text-base lg:text-lg">
                   Sem marcações para este dia
                 </p>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3 md:space-y-4">
                   {selectedDateBookings
                     .sort((a, b) => a.time.localeCompare(b.time))
                     .map((booking) => (
                       <div
                         key={booking.id}
-                        className="border border-gray-200 rounded-lg p-4 hover:border-black transition-colors cursor-pointer"
+                        className="border-2 border-gray-200 rounded-lg p-4 md:p-5 lg:p-6 hover:border-black transition-colors cursor-pointer min-h-[120px] md:min-h-[140px]"
                         onClick={() => setSelectedBooking(booking)}
                       >
-                        <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-start justify-between mb-3 md:mb-4">
                           <div>
-                            <p className="font-bold text-black text-lg">{booking.time}</p>
-                            <p className="text-sm text-gray-600">{booking.service}</p>
+                            <p className="font-bold text-black text-lg md:text-xl lg:text-2xl">{booking.time}</p>
+                            <p className="text-sm md:text-base lg:text-lg text-gray-600">{booking.service}</p>
                           </div>
                           <span
-                            className={`text-xs px-2 py-1 rounded-full font-medium ${
+                            className={`text-xs md:text-sm lg:text-base px-2 md:px-3 lg:px-4 py-1 md:py-1.5 rounded-full font-medium ${
                               booking.status === "confirmed"
                                 ? "bg-green-100 text-green-700"
                                 : booking.status === "completed"
@@ -595,12 +745,12 @@ export default function AdminDashboard() {
                             {booking.status}
                           </span>
                         </div>
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-black">👤 {booking.name}</p>
-                          <p className="text-xs text-gray-600">✂️ {booking.barber}</p>
-                          <p className="text-xs text-gray-500">📞 {booking.phone}</p>
+                        <div className="space-y-1 md:space-y-2">
+                          <p className="text-sm md:text-base lg:text-lg font-medium text-black">👤 {booking.name}</p>
+                          <p className="text-xs md:text-sm lg:text-base text-gray-600">✂️ {booking.barber}</p>
+                          <p className="text-xs md:text-sm lg:text-base text-gray-500">📞 {booking.phone}</p>
                           {booking.email && (
-                            <p className="text-xs text-gray-500">📧 {booking.email}</p>
+                            <p className="text-xs md:text-sm lg:text-base text-gray-500">📧 {booking.email}</p>
                           )}
                         </div>
                       </div>
@@ -610,74 +760,74 @@ export default function AdminDashboard() {
 
               {/* Booking Details Modal */}
               {selectedBooking && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                  <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-bold text-black">Detalhes da Marcação</h3>
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 md:p-6">
+                  <div className="bg-white rounded-lg shadow-xl max-w-md md:max-w-lg lg:max-w-xl w-full p-6 md:p-8 lg:p-10 max-h-[90vh] overflow-y-auto">
+                    <div className="flex items-center justify-between mb-4 md:mb-6">
+                      <h3 className="text-lg md:text-2xl lg:text-3xl font-bold text-black">Detalhes da Marcação</h3>
                       <button
                         onClick={() => setSelectedBooking(null)}
-                        className="text-gray-500 hover:text-black"
+                        className="text-gray-500 hover:text-black text-xl md:text-2xl lg:text-3xl w-8 h-8 md:w-10 md:h-10 lg:w-12 lg:h-12 flex items-center justify-center"
                       >
                         ✕
                       </button>
                     </div>
 
-                    <div className="space-y-3 mb-6">
+                    <div className="space-y-3 md:space-y-4 mb-6 md:mb-8">
                       <div>
-                        <p className="text-xs text-gray-500">Serviço</p>
-                        <p className="font-medium text-black">{selectedBooking.service}</p>
+                        <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Serviço</p>
+                        <p className="font-medium text-black text-sm md:text-base lg:text-lg">{selectedBooking.service}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">Barbeiro</p>
-                        <p className="font-medium text-black">{selectedBooking.barber}</p>
+                        <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Barbeiro</p>
+                        <p className="font-medium text-black text-sm md:text-base lg:text-lg">{selectedBooking.barber}</p>
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-4 md:gap-6">
                         <div>
-                          <p className="text-xs text-gray-500">Data</p>
-                          <p className="font-medium text-black">
+                          <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Data</p>
+                          <p className="font-medium text-black text-sm md:text-base lg:text-lg">
                             {format(parseISO(selectedBooking.date), "dd/MM/yyyy")}
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-500">Hora</p>
-                          <p className="font-medium text-black">{selectedBooking.time}</p>
+                          <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Hora</p>
+                          <p className="font-medium text-black text-sm md:text-base lg:text-lg">{selectedBooking.time}</p>
                         </div>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">Cliente</p>
-                        <p className="font-medium text-black">{selectedBooking.name}</p>
+                        <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Cliente</p>
+                        <p className="font-medium text-black text-sm md:text-base lg:text-lg">{selectedBooking.name}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">Telefone</p>
-                        <p className="font-medium text-black">{selectedBooking.phone}</p>
+                        <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Telefone</p>
+                        <p className="font-medium text-black text-sm md:text-base lg:text-lg">{selectedBooking.phone}</p>
                       </div>
                       {selectedBooking.email && (
                         <div>
-                          <p className="text-xs text-gray-500">Email</p>
-                          <p className="font-medium text-black">{selectedBooking.email}</p>
+                          <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Email</p>
+                          <p className="font-medium text-black text-sm md:text-base lg:text-lg">{selectedBooking.email}</p>
                         </div>
                       )}
                       {selectedBooking.observations && (
                         <div>
-                          <p className="text-xs text-gray-500">Observações</p>
-                          <p className="font-medium text-black">{selectedBooking.observations}</p>
+                          <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Observações</p>
+                          <p className="font-medium text-black text-sm md:text-base lg:text-lg">{selectedBooking.observations}</p>
                         </div>
                       )}
                       <div>
-                        <p className="text-xs text-gray-500">Criado por</p>
-                        <p className="font-medium text-black">{selectedBooking.created_by}</p>
+                        <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Criado por</p>
+                        <p className="font-medium text-black text-sm md:text-base lg:text-lg">{selectedBooking.created_by}</p>
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-2 md:space-y-3">
+                      <div className="grid grid-cols-2 gap-2 md:gap-3">
                         <Button
                           onClick={() =>
                             handleUpdateStatus(selectedBooking.id, "confirmed")
                           }
                           variant="outline"
                           size="sm"
-                          className="text-xs"
+                          className="text-xs md:text-sm lg:text-base px-3 md:px-4 lg:px-5 py-2 md:py-3 min-h-[44px] md:min-h-[48px]"
                         >
                           Confirmar
                         </Button>
@@ -687,7 +837,7 @@ export default function AdminDashboard() {
                           }
                           variant="outline"
                           size="sm"
-                          className="text-xs"
+                          className="text-xs md:text-sm lg:text-base px-3 md:px-4 lg:px-5 py-2 md:py-3 min-h-[44px] md:min-h-[48px]"
                         >
                           Concluído
                         </Button>
@@ -696,7 +846,7 @@ export default function AdminDashboard() {
                         onClick={() => handleDeleteBooking(selectedBooking.id)}
                         variant="outline"
                         size="sm"
-                        className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 text-xs"
+                        className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 text-xs md:text-sm lg:text-base px-3 md:px-4 lg:px-5 py-2 md:py-3 min-h-[44px] md:min-h-[48px]"
                       >
                         Eliminar Marcação
                       </Button>
@@ -711,10 +861,10 @@ export default function AdminDashboard() {
 
       {/* New Booking Modal */}
       {showNewBookingForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-2xl font-bold text-black">Nova Marcação</h3>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 md:p-6">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl md:max-w-3xl lg:max-w-4xl w-full p-6 md:p-8 lg:p-10 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6 md:mb-8">
+              <h3 className="text-xl md:text-2xl lg:text-3xl font-bold text-black">Nova Marcação</h3>
               <button
                 onClick={() => {
                   setShowNewBookingForm(false);
@@ -730,17 +880,17 @@ export default function AdminDashboard() {
                     observations: "",
                   });
                 }}
-                className="text-gray-500 hover:text-black text-2xl"
+                className="text-gray-500 hover:text-black text-xl md:text-2xl lg:text-3xl w-8 h-8 md:w-10 md:h-10 lg:w-12 lg:h-12 flex items-center justify-center"
               >
                 ✕
               </button>
             </div>
 
             {/* Stepper */}
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center justify-between mb-6 md:mb-8">
               <div className="flex items-center flex-1">
                 <motion.div 
-                  className={`flex items-center justify-center w-10 h-10 rounded-full font-bold`}
+                  className={`flex items-center justify-center w-10 h-10 md:w-12 md:h-12 lg:w-14 lg:h-14 rounded-full font-bold text-sm md:text-base lg:text-lg`}
                   animate={{
                     backgroundColor: bookingStep >= 1 ? "#000000" : "#E5E7EB",
                     color: bookingStep >= 1 ? "#FFFFFF" : "#6B7280",
@@ -762,7 +912,7 @@ export default function AdminDashboard() {
               </div>
               <div className="flex items-center flex-1">
                 <motion.div 
-                  className={`flex items-center justify-center w-10 h-10 rounded-full font-bold`}
+                  className={`flex items-center justify-center w-10 h-10 md:w-12 md:h-12 lg:w-14 lg:h-14 rounded-full font-bold text-sm md:text-base lg:text-lg`}
                   animate={{
                     backgroundColor: bookingStep >= 2 ? "#000000" : "#E5E7EB",
                     color: bookingStep >= 2 ? "#FFFFFF" : "#6B7280",
@@ -773,7 +923,7 @@ export default function AdminDashboard() {
                   2
                 </motion.div>
                 <motion.div 
-                  className="flex-1 h-1 mx-2"
+                  className="flex-1 h-1 md:h-1.5 mx-2"
                   animate={{
                     backgroundColor: bookingStep >= 3 ? "#000000" : "#E5E7EB",
                     scaleX: bookingStep >= 3 ? 1 : 0.8
@@ -784,7 +934,7 @@ export default function AdminDashboard() {
               </div>
               <div className="flex items-center">
                 <motion.div 
-                  className={`flex items-center justify-center w-10 h-10 rounded-full font-bold`}
+                  className={`flex items-center justify-center w-10 h-10 md:w-12 md:h-12 lg:w-14 lg:h-14 rounded-full font-bold text-sm md:text-base lg:text-lg`}
                   animate={{
                     backgroundColor: bookingStep >= 3 ? "#000000" : "#E5E7EB",
                     color: bookingStep >= 3 ? "#FFFFFF" : "#6B7280",
@@ -797,7 +947,7 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="mb-4 text-center overflow-hidden">
+            <div className="mb-4 md:mb-6 text-center overflow-hidden">
               <AnimatePresence mode="wait">
                 <motion.p
                   key={bookingStep}
@@ -805,7 +955,7 @@ export default function AdminDashboard() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.2 }}
-                  className="text-sm text-gray-600"
+                  className="text-sm md:text-base lg:text-lg text-gray-600"
                 >
                   {bookingStep === 1 && "Passo 1: Serviço e Data"}
                   {bookingStep === 2 && "Passo 2: Selecione o Horário"}
@@ -814,7 +964,7 @@ export default function AdminDashboard() {
               </AnimatePresence>
             </div>
 
-            <form onSubmit={handleCreateBooking} className="space-y-6">
+            <form onSubmit={handleCreateBooking} className="space-y-6 md:space-y-8">
               <AnimatePresence mode="wait">
                 {/* Step 1: Service and Date */}
                 {bookingStep === 1 && (
@@ -827,7 +977,7 @@ export default function AdminDashboard() {
                     className="space-y-6"
                   >
                   <div>
-                    <label className="block text-base font-medium text-gray-700 mb-2">
+                    <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
                       Serviço
                     </label>
                     <Select
@@ -836,7 +986,7 @@ export default function AdminDashboard() {
                         setNewBooking({ ...newBooking, service: value })
                       }
                     >
-                      <SelectTrigger className="text-base p-6 w-full">
+                      <SelectTrigger className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 w-full h-[52px] md:h-[60px]">
                         <SelectValue placeholder="Selecione o serviço" />
                       </SelectTrigger>
                       <SelectContent>
@@ -848,7 +998,7 @@ export default function AdminDashboard() {
                   </div>
                   
                   <div>
-                    <label className="block text-base font-medium text-gray-700 mb-2">
+                    <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
                       Barbeiro
                     </label>
                     <Select
@@ -857,7 +1007,7 @@ export default function AdminDashboard() {
                         setNewBooking({ ...newBooking, barber: value })
                       }
                     >
-                      <SelectTrigger className="text-base p-6 w-full">
+                      <SelectTrigger className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 w-full h-[52px] md:h-[60px]">
                         <SelectValue placeholder="Selecione o barbeiro" />
                       </SelectTrigger>
                       <SelectContent>
@@ -896,15 +1046,38 @@ export default function AdminDashboard() {
                           selected={newBooking.date ? new Date(newBooking.date) : undefined}
                           onSelect={(date) => {
                             if (date) {
-                              setNewBooking({ 
-                                ...newBooking, 
+                              setNewBooking({
+                                ...newBooking,
                                 date: format(date, "yyyy-MM-dd"),
-                                time: "" 
+                                time: ""
                               });
                             }
                           }}
                           locale={pt}
-                          disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                          disabled={(date) => {
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const checkDate = new Date(date);
+                            checkDate.setHours(0, 0, 0, 0);
+                            
+                            // Block past dates
+                            if (checkDate < today) return true;
+                            
+                            // Block Sundays
+                            if (checkDate.getDay() === 0) return true;
+                            
+                            const dateStr = format(checkDate, "yyyy-MM-dd");
+                            
+                            // Block holidays when barbershop is closed (always, regardless of barber)
+                            if (holidays.has(dateStr)) return true;
+                            
+                            // Block if barber is on vacation (only if a specific barber is selected)
+                            if (newBooking.barber && newBooking.barber !== "all") {
+                              if (blockedDates.has(dateStr)) return true;
+                            }
+                            
+                            return false;
+                          }}
                           initialFocus
                         />
                       </PopoverContent>
@@ -915,7 +1088,7 @@ export default function AdminDashboard() {
                       <Button
                         type="button"
                         onClick={() => setBookingStep(2)}
-                        className="bg-black hover:bg-black/80 text-white text-base px-8 py-6"
+                        className="bg-black hover:bg-black/80 text-white text-base md:text-lg lg:text-xl px-6 md:px-8 lg:px-10 py-3 md:py-4 lg:py-5 min-h-[48px] md:min-h-[52px] font-bold"
                       >
                         Próximo →
                       </Button>
@@ -934,21 +1107,21 @@ export default function AdminDashboard() {
                     className="space-y-6"
                   >
                   <div>
-                    <label className="block text-base font-medium text-gray-700 mb-3">
+                    <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-3 md:mb-4">
                       Horário Disponível <span className="text-red-500">*</span>
                     </label>
                     {availableSlots.length === 0 ? (
-                      <div className="p-8 bg-gray-100 rounded-md text-center text-gray-600">
+                      <div className="p-6 md:p-8 lg:p-10 bg-gray-100 rounded-md text-center text-gray-600 text-sm md:text-base lg:text-lg">
                         Sem horários disponíveis para esta data
                       </div>
                     ) : (
-                      <div className="grid grid-cols-4 gap-3 max-h-96 overflow-y-auto p-4 border border-gray-300 rounded-md">
+                      <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4 max-h-96 overflow-y-auto p-4 md:p-5 border-2 border-gray-300 rounded-md">
                         {availableSlots.map((slot) => (
                           <button
                             key={slot}
                             type="button"
                             onClick={() => setNewBooking({ ...newBooking, time: slot })}
-                            className={`p-4 text-base font-medium rounded-lg transition-all ${
+                            className={`p-3 md:p-4 lg:p-5 text-sm md:text-base lg:text-lg font-medium rounded-lg transition-all min-h-[52px] md:min-h-[60px] ${
                               newBooking.time === slot
                                 ? "bg-black text-white ring-2 ring-black"
                                 : "bg-gray-100 hover:bg-gray-200 text-black"
@@ -959,17 +1132,17 @@ export default function AdminDashboard() {
                         ))}
                       </div>
                     )}
-                    <p className="text-sm text-gray-500 mt-3">
+                    <p className="text-xs md:text-sm lg:text-base text-gray-500 mt-3 md:mt-4">
                       Horários: 08:30-13:00 (manhã) e 15:00-18:30 (tarde) • Slots de 30 minutos
                     </p>
                   </div>
 
-                    <div className="flex gap-4">
+                    <div className="flex gap-3 md:gap-4">
                       <Button
                         type="button"
                         onClick={() => setBookingStep(1)}
                         variant="outline"
-                        className="flex-1 text-base py-6"
+                        className="flex-1 text-base md:text-lg lg:text-xl py-3 md:py-4 lg:py-5 min-h-[48px] md:min-h-[52px] font-medium"
                       >
                         ← Voltar
                       </Button>
@@ -982,7 +1155,7 @@ export default function AdminDashboard() {
                           }
                           setBookingStep(3);
                         }}
-                        className="flex-1 bg-black hover:bg-black/80 text-white text-base py-6"
+                        className="flex-1 bg-black hover:bg-black/80 text-white text-base md:text-lg lg:text-xl py-3 md:py-4 lg:py-5 min-h-[48px] md:min-h-[52px] font-bold"
                       >
                         Próximo →
                       </Button>
@@ -1001,7 +1174,7 @@ export default function AdminDashboard() {
                     className="space-y-6"
                   >
                   <div>
-                    <label className="block text-base font-medium text-gray-700 mb-2">
+                    <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
                       Nome <span className="text-red-500">*</span>
                     </label>
                     <Input
@@ -1010,14 +1183,14 @@ export default function AdminDashboard() {
                       onChange={(e) =>
                         setNewBooking({ ...newBooking, name: e.target.value })
                       }
-                      className="text-base p-6"
+                      className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 h-[52px] md:h-[60px]"
                       placeholder="Nome do cliente"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="block text-base font-medium text-gray-700 mb-2">
+                    <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
                       Telefone <span className="text-red-500">*</span>
                     </label>
                     <Input
@@ -1026,15 +1199,15 @@ export default function AdminDashboard() {
                       onChange={(e) =>
                         setNewBooking({ ...newBooking, phone: e.target.value })
                       }
-                      className="text-base p-6"
+                      className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 h-[52px] md:h-[60px]"
                       placeholder="+351 XXX XXX XXX"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="block text-base font-medium text-gray-700 mb-2">
-                      Email <span className="text-gray-400 text-sm">(opcional - necessário para lembretes)</span>
+                    <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
+                      Email <span className="text-gray-400 text-xs md:text-sm">(opcional - necessário para lembretes)</span>
                     </label>
                     <Input
                       type="email"
@@ -1042,42 +1215,42 @@ export default function AdminDashboard() {
                       onChange={(e) =>
                         setNewBooking({ ...newBooking, email: e.target.value })
                       }
-                      className="text-base p-6"
+                      className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 h-[52px] md:h-[60px]"
                       placeholder="email@exemplo.com"
                     />
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-xs md:text-sm lg:text-base text-gray-500 mt-1 md:mt-2">
                       Se fornecer email, o cliente receberá confirmação e lembretes automáticos
                     </p>
                   </div>
 
                   <div>
-                    <label className="block text-base font-medium text-gray-700 mb-2">
-                      Observações <span className="text-gray-400 text-sm">(opcional)</span>
+                    <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
+                      Observações <span className="text-gray-400 text-xs md:text-sm">(opcional)</span>
                     </label>
                     <Textarea
                       value={newBooking.observations}
                       onChange={(e) =>
                         setNewBooking({ ...newBooking, observations: e.target.value })
                       }
-                      rows={3}
-                      className="text-base p-3"
+                      rows={4}
+                      className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 min-h-[100px] md:min-h-[120px]"
                       placeholder="Notas adicionais sobre a marcação..."
                     />
                   </div>
 
-                    <div className="flex gap-4 pt-4">
+                    <div className="flex gap-3 md:gap-4 pt-4 md:pt-6">
                       <Button
                         type="button"
                         onClick={() => setBookingStep(2)}
                         variant="outline"
-                        className="flex-1 text-base py-6"
+                        className="flex-1 text-base md:text-lg lg:text-xl py-3 md:py-4 lg:py-5 min-h-[48px] md:min-h-[52px] font-medium"
                         disabled={isCreatingBooking}
                       >
                         ← Voltar
                       </Button>
                       <Button
                         type="submit"
-                        className="flex-1 bg-black hover:bg-black/80 text-white text-base py-6 font-bold"
+                        className="flex-1 bg-black hover:bg-black/80 text-white text-base md:text-lg lg:text-xl py-3 md:py-4 lg:py-5 min-h-[48px] md:min-h-[52px] font-bold"
                         disabled={isCreatingBooking}
                       >
                         {isCreatingBooking ? (

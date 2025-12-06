@@ -28,6 +28,23 @@ export interface AdminUser {
   created_at?: string;
 }
 
+export interface Vacation {
+  id?: number;
+  barber: string;
+  start_date: string;
+  end_date: string;
+  created_at?: string;
+  notification_sent?: boolean;
+}
+
+export interface Holiday {
+  id?: number;
+  name: string;
+  date: string;
+  is_working: boolean;
+  created_at?: string;
+}
+
 // Database functions
 export const bookingDb = {
   // Create booking
@@ -163,6 +180,29 @@ export const bookingDb = {
     barber: string,
     excludeId?: number
   ): Promise<boolean> => {
+    // Check if barber is on vacation
+    const vacationCheck = await sql`
+      SELECT COUNT(*) as count 
+      FROM vacations 
+      WHERE barber = ${barber}
+      AND ${date} BETWEEN start_date AND end_date
+    `;
+    if (Number(vacationCheck[0].count) > 0) {
+      return false;
+    }
+
+    // Check if it's a holiday and barbershop is closed
+    const holidayCheck = await sql`
+      SELECT COUNT(*) as count 
+      FROM holidays 
+      WHERE date = ${date}
+      AND is_working = FALSE
+    `;
+    if (Number(holidayCheck[0].count) > 0) {
+      return false;
+    }
+
+    // Check if slot is already booked
     let result;
     if (excludeId) {
       result = await sql`
@@ -185,6 +225,52 @@ export const bookingDb = {
       `;
     }
     return Number(result[0].count) === 0;
+  },
+
+  // Get bookings by barber
+  getByBarber: async (barber: string): Promise<Booking[]> => {
+    const result = await sql`
+      SELECT * FROM bookings 
+      WHERE barber = ${barber}
+      ORDER BY date DESC, time DESC
+    `;
+    return result as Booking[];
+  },
+
+  // Get unique clients (by email or phone)
+  getUniqueClients: async (barber?: string): Promise<any[]> => {
+    let result;
+    if (barber && barber !== "all") {
+      result = await sql`
+        SELECT DISTINCT ON (COALESCE(email, phone))
+          name,
+          email,
+          phone,
+          barber,
+          MAX(date) as last_booking_date,
+          COUNT(*) as total_bookings
+        FROM bookings
+        WHERE barber = ${barber}
+        AND status != 'cancelled'
+        GROUP BY name, email, phone, barber
+        ORDER BY COALESCE(email, phone), MAX(date) DESC
+      `;
+    } else {
+      result = await sql`
+        SELECT DISTINCT ON (COALESCE(email, phone))
+          name,
+          email,
+          phone,
+          barber,
+          MAX(date) as last_booking_date,
+          COUNT(*) as total_bookings
+        FROM bookings
+        WHERE status != 'cancelled'
+        GROUP BY name, email, phone, barber
+        ORDER BY COALESCE(email, phone), MAX(date) DESC
+      `;
+    }
+    return result;
   },
 
   // Get bookings that need reminders (30 minutes before)
@@ -245,6 +331,116 @@ export const adminDb = {
       WHERE username = ${username}
     `;
     return result[0] as AdminUser | undefined;
+  },
+};
+
+export const vacationDb = {
+  // Create vacation
+  create: async (vacation: Vacation): Promise<number> => {
+    const result = await sql`
+      INSERT INTO vacations (barber, start_date, end_date)
+      VALUES (${vacation.barber}, ${vacation.start_date}, ${vacation.end_date})
+      RETURNING id
+    `;
+    return result[0].id;
+  },
+
+  // Get all vacations
+  getAll: async (): Promise<Vacation[]> => {
+    const result = await sql`
+      SELECT * FROM vacations 
+      ORDER BY start_date DESC
+    `;
+    return result as Vacation[];
+  },
+
+  // Get vacations by barber
+  getByBarber: async (barber: string): Promise<Vacation[]> => {
+    const result = await sql`
+      SELECT * FROM vacations 
+      WHERE barber = ${barber}
+      ORDER BY start_date DESC
+    `;
+    return result as Vacation[];
+  },
+
+  // Get vacations for a date range
+  getByDateRange: async (startDate: string, endDate: string): Promise<Vacation[]> => {
+    const result = await sql`
+      SELECT * FROM vacations 
+      WHERE (start_date <= ${endDate} AND end_date >= ${startDate})
+      ORDER BY start_date
+    `;
+    return result as Vacation[];
+  },
+
+  // Delete vacation
+  delete: async (id: number): Promise<void> => {
+    await sql`
+      DELETE FROM vacations 
+      WHERE id = ${id}
+    `;
+  },
+
+  // Mark notification as sent
+  markNotificationSent: async (id: number): Promise<void> => {
+    await sql`
+      UPDATE vacations 
+      SET notification_sent = TRUE 
+      WHERE id = ${id}
+    `;
+  },
+};
+
+export const holidayDb = {
+  // Get all holidays
+  getAll: async (): Promise<Holiday[]> => {
+    const result = await sql`
+      SELECT * FROM holidays 
+      ORDER BY date
+    `;
+    return result as Holiday[];
+  },
+
+  // Get holiday by date
+  getByDate: async (date: string): Promise<Holiday | undefined> => {
+    const result = await sql`
+      SELECT * FROM holidays 
+      WHERE date = ${date}
+    `;
+    return result[0] as Holiday | undefined;
+  },
+
+  // Create or update holiday
+  upsert: async (holiday: Holiday): Promise<number> => {
+    // First try to find existing holiday
+    const existing = await holidayDb.getByDate(holiday.date);
+    
+    if (existing) {
+      // Update existing
+      await sql`
+        UPDATE holidays 
+        SET name = ${holiday.name}, is_working = ${holiday.is_working}
+        WHERE date = ${holiday.date}
+      `;
+      return existing.id!;
+    } else {
+      // Insert new
+      const result = await sql`
+        INSERT INTO holidays (name, date, is_working)
+        VALUES (${holiday.name}, ${holiday.date}, ${holiday.is_working})
+        RETURNING id
+      `;
+      return result[0].id;
+    }
+  },
+
+  // Delete holiday
+  delete: async (id: number): Promise<void> => {
+    await sql`
+      DELETE FROM holidays 
+      WHERE id = ${id}
+    `;
   },
 };
 

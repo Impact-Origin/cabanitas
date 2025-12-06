@@ -50,6 +50,8 @@ export function BookingWizard() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [blockedDates, setBlockedDates] = useState<Set<string>>(new Set());
+  const [isLoadingBlockedDates, setIsLoadingBlockedDates] = useState(false);
 
   const handleServiceSelect = (serviceId: string) => {
     setBookingData({ ...bookingData, service: serviceId });
@@ -59,6 +61,77 @@ export function BookingWizard() {
   const handleBarberSelect = (barberId: string) => {
     setBookingData({ ...bookingData, barber: barberId });
     setStep("datetime");
+    // Load blocked dates when barber is selected
+    if (barberId && barberId !== "no-preference") {
+      loadBlockedDates(barberId);
+    }
+  };
+
+  // Load blocked dates (vacations, holidays, weekends)
+  const loadBlockedDates = async (barberId: string) => {
+    setIsLoadingBlockedDates(true);
+    try {
+      const barberName = barbers.find((b) => b.id === barberId)?.name || "";
+      const blocked = new Set<string>();
+
+      // Fetch vacations for this barber
+      const vacationsResponse = await fetch(`/api/vacations?barber=${barberName}`);
+      const vacationsData = await vacationsResponse.json();
+      (vacationsData.vacations || []).forEach((v: any) => {
+        const start = new Date(v.start_date);
+        const end = new Date(v.end_date);
+        const current = new Date(start);
+        while (current <= end) {
+          blocked.add(current.toISOString().split("T")[0]);
+          current.setDate(current.getDate() + 1);
+        }
+      });
+
+      // Fetch holidays
+      const holidaysResponse = await fetch(`/api/holidays`);
+      const holidaysData = await holidaysResponse.json();
+      (holidaysData.holidays || []).forEach((h: any) => {
+        // Block holiday if barbershop is closed (is_working = false)
+        if (!h.is_working) {
+          blocked.add(h.date);
+        }
+      });
+
+      setBlockedDates(blocked);
+    } catch (error) {
+      console.error("Error loading blocked dates:", error);
+    } finally {
+      setIsLoadingBlockedDates(false);
+    }
+  };
+
+  // Check if a date should be disabled
+  const isDateDisabled = (date: Date): boolean => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkDate = new Date(date);
+    checkDate.setHours(0, 0, 0, 0);
+
+    // Block past dates
+    if (checkDate < today) {
+      return true;
+    }
+
+    // Block Sundays (day 0)
+    if (checkDate.getDay() === 0) {
+      return true;
+    }
+
+    // Block Saturdays morning (day 6) - we'll handle this in time slots
+    // But we can still allow Saturday selection for afternoon slots
+
+    // Check if date is in blocked dates (vacations, closed holidays)
+    const dateStr = checkDate.toISOString().split("T")[0];
+    if (blockedDates.has(dateStr)) {
+      return true;
+    }
+
+    return false;
   };
 
   const handleDateSelect = (date: Date) => {
@@ -114,8 +187,42 @@ export function BookingWizard() {
         ? "Sem Preferência" 
         : barbers.find((b) => b.id === bookingData.barber)?.name || "Edgar";
       
+      // Check if barber is on vacation
+      const vacationsResponse = await fetch(`/api/vacations?barber=${barberName}&startDate=${formattedDate}&endDate=${formattedDate}`);
+      const vacationsData = await vacationsResponse.json();
+      const isOnVacation = (vacationsData.vacations || []).some((v: any) => {
+        const start = new Date(v.start_date);
+        const end = new Date(v.end_date);
+        const checkDate = new Date(formattedDate);
+        return checkDate >= start && checkDate <= end;
+      });
+
+      // Check if it's a holiday and barbershop is closed
+      const holidaysResponse = await fetch(`/api/holidays`);
+      const holidaysData = await holidaysResponse.json();
+      const holiday = (holidaysData.holidays || []).find((h: any) => h.date === formattedDate);
+      const isHolidayClosed = holiday && !holiday.is_working;
+
+      // If barber is on vacation or it's a closed holiday, no slots available
+      if (isOnVacation || isHolidayClosed) {
+        setAvailableSlots([]);
+        return;
+      }
+
+      // Check if it's Saturday - block morning slots
+      const selectedDay = selectedDate.getDay(); // 0 = Sunday, 6 = Saturday
+      const isSaturday = selectedDay === 6;
+      
       // Get all possible slots
-      const allSlots = generateTimeSlots();
+      let allSlots = generateTimeSlots();
+      
+      // Block Saturday morning slots (before 13:00)
+      if (isSaturday) {
+        allSlots = allSlots.filter(slot => {
+          const hour = parseInt(slot.split(':')[0]);
+          return hour >= 15; // Only afternoon slots (15:00 onwards)
+        });
+      }
       
       // Get bookings for this date
       const response = await fetch(`/api/bookings?date=${formattedDate}`);
@@ -132,7 +239,7 @@ export function BookingWizard() {
       setAvailableSlots(available);
     } catch (error) {
       console.error("Error fetching available slots:", error);
-      setAvailableSlots(generateTimeSlots());
+      setAvailableSlots([]);
     } finally {
       setIsLoadingSlots(false);
     }
@@ -231,7 +338,7 @@ export function BookingWizard() {
     // Add days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
-      const isPast = date < today;
+      const isDisabled = isDateDisabled(date);
       const isSelected =
         selectedDate &&
         date.getDate() === selectedDate.getDate() &&
@@ -241,10 +348,10 @@ export function BookingWizard() {
       days.push(
         <button
           key={day}
-          onClick={() => !isPast && handleDateSelect(date)}
-          disabled={isPast}
+          onClick={() => !isDisabled && handleDateSelect(date)}
+          disabled={isDisabled}
           className={`p-2 text-sm rounded-full text-center transition-all ${
-            isPast
+            isDisabled
               ? "text-gray-300 cursor-not-allowed"
               : isSelected
               ? "bg-black text-white font-semibold"
