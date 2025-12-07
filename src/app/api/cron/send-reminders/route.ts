@@ -5,22 +5,29 @@ import { Resend } from "resend";
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // This endpoint should be called by a cron job every 5 minutes
-// You can use services like Vercel Cron, Upstash QStash, or cron-job.org
+// Vercel Cron automatically authenticates requests with x-vercel-signature header
+// For manual testing, you can use CRON_SECRET environment variable
 export async function GET(request: Request) {
   try {
-    // Optional: Verify cron secret for security (only if CRON_SECRET is set)
-    if (process.env.CRON_SECRET) {
+    // Check if this is a Vercel cron request (has x-vercel-signature header)
+    const vercelSignature = request.headers.get('x-vercel-signature');
+    const isVercelCron = !!vercelSignature;
+    
+    // If not a Vercel cron request, check for CRON_SECRET (for manual testing)
+    if (!isVercelCron && process.env.CRON_SECRET) {
       const authHeader = request.headers.get('authorization');
       const token = authHeader?.replace('Bearer ', '');
       
       if (token !== process.env.CRON_SECRET) {
-        console.log('❌ Unauthorized cron request');
+        console.log('❌ Unauthorized cron request - missing or invalid CRON_SECRET');
         return NextResponse.json(
           { success: false, error: 'Unauthorized' },
           { status: 401 }
         );
       }
     }
+    
+    console.log('✅ Cron job triggered', { isVercelCron, timestamp: new Date().toISOString() });
     // Get bookings that need reminders (30 minutes before)
     const bookingsNeedingReminders = await bookingDb.getBookingsNeedingReminders();
 
