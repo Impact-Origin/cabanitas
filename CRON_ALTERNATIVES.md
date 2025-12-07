@@ -6,7 +6,14 @@ O sistema precisa enviar lembretes **30 minutos antes** das marcações. Para is
 
 ## ⚠️ Limitação do Vercel Hobby Plan
 
-O plano Hobby do Vercel só permite cron jobs que executam **uma vez por dia**. O cron expression `*/5 * * * *` (a cada 5 minutos) requer upgrade para o plano Pro.
+O plano Hobby do Vercel só permite cron jobs que executam **uma vez por dia**. 
+
+**IMPORTANTE**: 
+- ❌ `*/5 * * * *` (a cada 5 minutos) - **NÃO funciona** no Hobby
+- ❌ `0 8-18 * * *` (a cada hora das 8h-18h) - **NÃO funciona** no Hobby (executa mais de uma vez)
+- ✅ `0 9 * * *` (uma vez por dia às 9h) - **Funciona** no Hobby, mas **NÃO é adequado** para lembretes de 30 minutos
+
+**Conclusão**: Para lembretes precisos de 30 minutos antes, você **DEVE** usar um serviço externo ou fazer upgrade para Vercel Pro.
 
 ## ✅ Soluções
 
