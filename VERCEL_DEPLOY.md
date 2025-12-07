@@ -87,30 +87,38 @@ O Vercel detecta automaticamente as configurações do Next.js, mas verifique:
 
 ### Opção 1: Cron Job Diário (Plano Hobby) ⏰
 
-O cron job está configurado para executar **a cada hora durante o horário de funcionamento** (8h-18h):
+O cron job está configurado para executar **uma vez por dia às 9h** (limitação do plano Hobby):
 
 ```json
 {
   "crons": [
     {
       "path": "/api/cron/send-reminders",
-      "schedule": "0 8-18 * * *"
+      "schedule": "0 9 * * *"
     }
   ]
 }
 ```
 
-**Limitação**: Os lembretes podem ser enviados até 1 hora antes (em vez de exatamente 30 minutos antes).
+**⚠️ Limitação Importante**: 
+- O plano Hobby só permite cron jobs que executam **uma vez por dia**
+- Este cron executa apenas às 9h da manhã
+- **NÃO é adequado para lembretes de 30 minutos antes** das marcações
+- **Recomendamos usar Opção 2 (serviço externo)** para lembretes precisos
 
 **O que este cron faz:**
-- Executa a cada hora das 8h às 18h
+- Executa uma vez por dia às 9h
 - Verifica marcações que precisam de lembretes (30 minutos antes)
 - Verifica marcações que precisam de pedidos de review (1 hora depois)
 - Envia emails automaticamente
 
-### Opção 2: Serviço Externo (Recomendado) 🚀
+**Nota**: Para lembretes precisos, você **DEVE** usar um serviço externo (Opção 2) ou fazer upgrade para Vercel Pro (Opção 3).
 
-Para lembretes mais precisos (exatamente 30 minutos antes), use um serviço externo:
+### Opção 2: Serviço Externo (⭐ OBRIGATÓRIO para lembretes precisos) 🚀
+
+**IMPORTANTE**: Para lembretes precisos de 30 minutos antes, você **DEVE** usar um serviço externo, pois o plano Hobby só permite execução uma vez por dia.
+
+Recomendamos usar um serviço externo:
 
 #### A. Cron-Job.org (Gratuito)
 

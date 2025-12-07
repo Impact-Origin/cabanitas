@@ -5,9 +5,10 @@ import { Resend } from "resend";
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // This endpoint should be called by a cron job
-// - Vercel Hobby Plan: Once per day (configured to run hourly during business hours: 0 8-18 * * *)
+// - Vercel Hobby Plan: Once per day only (configured to run at 9 AM: 0 9 * * *)
+//   ⚠️ NOT suitable for 30-minute reminders - use external service instead!
 // - Vercel Pro Plan: Can run every 5 minutes (*/5 * * * *)
-// - External services (cron-job.org, Upstash QStash): Can run every 5 minutes
+// - External services (cron-job.org, Upstash QStash): Can run every 5 minutes (RECOMMENDED)
 // Vercel Cron automatically authenticates requests with x-vercel-signature header
 // For manual testing or external services, you can use CRON_SECRET environment variable
 export async function GET(request: Request) {
