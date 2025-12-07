@@ -81,24 +81,58 @@ O Vercel detecta automaticamente as configurações do Next.js, mas verifique:
 
 ## ⏰ Passo 3: Configurar Cron Job
 
-O cron job já está configurado no arquivo `vercel.json`:
+### ⚠️ Limitação do Plano Hobby
+
+**IMPORTANTE**: O plano Hobby do Vercel só permite cron jobs que executam **uma vez por dia**. Para lembretes de 30 minutos antes das marcações, você tem 3 opções:
+
+### Opção 1: Cron Job Diário (Plano Hobby) ⏰
+
+O cron job está configurado para executar **a cada hora durante o horário de funcionamento** (8h-18h):
 
 ```json
 {
   "crons": [
     {
       "path": "/api/cron/send-reminders",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 8-18 * * *"
     }
   ]
 }
 ```
 
+**Limitação**: Os lembretes podem ser enviados até 1 hora antes (em vez de exatamente 30 minutos antes).
+
 **O que este cron faz:**
-- Executa a cada 5 minutos
+- Executa a cada hora das 8h às 18h
 - Verifica marcações que precisam de lembretes (30 minutos antes)
 - Verifica marcações que precisam de pedidos de review (1 hora depois)
 - Envia emails automaticamente
+
+### Opção 2: Serviço Externo (Recomendado) 🚀
+
+Para lembretes mais precisos (exatamente 30 minutos antes), use um serviço externo:
+
+#### A. Cron-Job.org (Gratuito)
+
+1. Aceda a [cron-job.org](https://cron-job.org)
+2. Crie uma conta gratuita
+3. Crie um novo cron job:
+   - **URL**: `https://your-domain.vercel.app/api/cron/send-reminders`
+   - **Schedule**: A cada 5 minutos: `*/5 * * * *`
+   - **Method**: GET
+   - **Headers**: `Authorization: Bearer YOUR_CRON_SECRET` (se configurou CRON_SECRET)
+
+#### B. Upstash QStash (Gratuito até 10k requisições/mês)
+
+1. Aceda a [upstash.com](https://upstash.com)
+2. Crie uma conta e vá para QStash
+3. Configure um cron job para chamar o endpoint a cada 5 minutos
+
+### Opção 3: Upgrade para Vercel Pro 💎
+
+O plano Pro do Vercel permite cron jobs ilimitados:
+- Upgrade em: [vercel.com/pricing](https://vercel.com/pricing)
+- Permite usar: `*/5 * * * *` (a cada 5 minutos)
 
 ### Verificar Cron Job
 
