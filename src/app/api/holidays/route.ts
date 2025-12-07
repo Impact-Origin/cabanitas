@@ -18,15 +18,19 @@ export async function GET(req: NextRequest) {
           dateStr = '';
         } else if (typeof h.date === 'string') {
           dateStr = h.date;
-        } else if (h.date instanceof Date) {
-          // If it's a Date object, format it as YYYY-MM-DD (use local timezone)
-          const year = h.date.getFullYear();
-          const month = String(h.date.getMonth() + 1).padStart(2, '0');
-          const day = String(h.date.getDate()).padStart(2, '0');
-          dateStr = `${year}-${month}-${day}`;
         } else {
-          // Try to convert to string first
-          dateStr = String(h.date);
+          // Check if it's a Date object or convert to string
+          const dateValue = h.date as unknown;
+          if (dateValue instanceof Date) {
+            // If it's a Date object, format it as YYYY-MM-DD (use local timezone)
+            const year = dateValue.getFullYear();
+            const month = String(dateValue.getMonth() + 1).padStart(2, '0');
+            const day = String(dateValue.getDate()).padStart(2, '0');
+            dateStr = `${year}-${month}-${day}`;
+          } else {
+            // Try to convert to string first
+            dateStr = String(h.date);
+          }
         }
         
         // Now normalize the string to YYYY-MM-DD format

@@ -108,61 +108,40 @@ export const bookingDb = {
 
   // Update booking
   update: async (id: number, booking: Partial<Booking>): Promise<void> => {
-    const updates: string[] = [];
-    const values: any[] = [];
-
+    // Build updates one by one using template literals
     if (booking.service !== undefined) {
-      updates.push(`service = $${updates.length + 1}`);
-      values.push(booking.service);
+      await sql`UPDATE bookings SET service = ${booking.service} WHERE id = ${id}`;
     }
     if (booking.barber !== undefined) {
-      updates.push(`barber = $${updates.length + 1}`);
-      values.push(booking.barber);
+      await sql`UPDATE bookings SET barber = ${booking.barber} WHERE id = ${id}`;
     }
     if (booking.date !== undefined) {
-      updates.push(`date = $${updates.length + 1}`);
-      values.push(booking.date);
+      await sql`UPDATE bookings SET date = ${booking.date} WHERE id = ${id}`;
     }
     if (booking.time !== undefined) {
-      updates.push(`time = $${updates.length + 1}`);
-      values.push(booking.time);
+      await sql`UPDATE bookings SET time = ${booking.time} WHERE id = ${id}`;
     }
     if (booking.name !== undefined) {
-      updates.push(`name = $${updates.length + 1}`);
-      values.push(booking.name);
+      await sql`UPDATE bookings SET name = ${booking.name} WHERE id = ${id}`;
     }
     if (booking.phone !== undefined) {
-      updates.push(`phone = $${updates.length + 1}`);
-      values.push(booking.phone);
+      await sql`UPDATE bookings SET phone = ${booking.phone} WHERE id = ${id}`;
     }
     if (booking.email !== undefined) {
-      updates.push(`email = $${updates.length + 1}`);
-      values.push(booking.email);
+      await sql`UPDATE bookings SET email = ${booking.email} WHERE id = ${id}`;
     }
     if (booking.observations !== undefined) {
-      updates.push(`observations = $${updates.length + 1}`);
-      values.push(booking.observations);
+      await sql`UPDATE bookings SET observations = ${booking.observations} WHERE id = ${id}`;
     }
     if (booking.status !== undefined) {
-      updates.push(`status = $${updates.length + 1}`);
-      values.push(booking.status);
+      await sql`UPDATE bookings SET status = ${booking.status} WHERE id = ${id}`;
     }
     if (booking.reminder_sent !== undefined) {
-      updates.push(`reminder_sent = $${updates.length + 1}`);
-      values.push(booking.reminder_sent);
+      await sql`UPDATE bookings SET reminder_sent = ${booking.reminder_sent} WHERE id = ${id}`;
     }
     if (booking.review_sent !== undefined) {
-      updates.push(`review_sent = $${updates.length + 1}`);
-      values.push(booking.review_sent);
+      await sql`UPDATE bookings SET review_sent = ${booking.review_sent} WHERE id = ${id}`;
     }
-
-    if (updates.length === 0) return;
-
-    const query = `UPDATE bookings SET ${updates.join(", ")} WHERE id = $${updates.length + 1}`;
-    values.push(id);
-
-    // Use raw query for dynamic updates
-    await sql.unsafe(query, values);
   },
 
   // Delete booking

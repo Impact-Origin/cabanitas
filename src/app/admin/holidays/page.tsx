@@ -222,7 +222,7 @@ export default function HolidaysPage() {
         setHolidays(data.holidays);
         console.log("📅 State updated with", data.holidays.length, "holidays");
         if (data.holidays.length > 0) {
-          console.log("📅 Sample holidays:", data.holidays.slice(0, 3).map(h => ({ name: h.name, date: h.date, year: h.date?.split('-')[0] })));
+          console.log("📅 Sample holidays:", data.holidays.slice(0, 3).map((h: Holiday) => ({ name: h.name, date: h.date, year: h.date?.split('-')[0] })));
         }
       } else {
         console.error("❌ Invalid holidays data format:", {
