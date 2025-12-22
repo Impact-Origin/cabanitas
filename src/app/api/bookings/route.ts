@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bookingDb } from "@/lib/db";
-import { Resend } from "resend";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { sendEmail } from "@/lib/email";
+import { getConfirmationEmailTemplate, getAdminNotificationTemplate } from "@/lib/email-templates";
 
 // GET - Get all bookings or by date
 export async function GET(req: NextRequest) {
@@ -72,42 +71,21 @@ export async function POST(req: NextRequest) {
     // Send confirmation email to client (if email provided)
     if (email) {
       try {
-        await resend.emails.send({
-          from: "Barbearia Cabanitas <onboarding@resend.dev>",
-          to: [email],
+        await sendEmail({
+          to: email,
           subject: "Confirmação da Sua Marcação - Barbearia Cabanitas",
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #000;">Marcação Confirmada! ✂️</h2>
-              <p>Olá ${name},</p>
-              <p>A sua marcação na Barbearia Cabanitas foi confirmada com sucesso!</p>
-              
-              <div style="background-color: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 8px;">
-                <h3 style="margin-top: 0;">Detalhes da Marcação:</h3>
-                <p><strong>Serviço:</strong> ${service}</p>
-                <p><strong>Barbeiro:</strong> ${barber}</p>
-                <p><strong>Data:</strong> ${new Date(date).toLocaleDateString("pt-PT", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}</p>
-                <p><strong>Hora:</strong> ${time}</p>
-                ${observations ? `<p><strong>Observações:</strong> ${observations}</p>` : ""}
-              </div>
-
-              <p>Aguardamos a sua visita!</p>
-              <p>Receberá um lembrete 30 minutos antes da sua marcação.</p>
-              
-              <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
-              
-              <p style="color: #666; font-size: 14px;">
-                <strong>Barbearia Cabanitas</strong><br>
-                Rua Capitão João Francisco de Sousa nº36<br>
-                7800-451 Beja<br>
-                📞 +351 963 242 206
-              </p>
-            </div>
-          `,
+          html: getConfirmationEmailTemplate({
+            name,
+            service,
+            barber,
+            date: new Date(date).toLocaleDateString("pt-PT", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            }),
+            time,
+            observations: observations || undefined,
+          }),
         });
       } catch (emailError) {
         console.error("Error sending confirmation email:", emailError);
@@ -116,33 +94,24 @@ export async function POST(req: NextRequest) {
 
     // Send notification email to barbershop
     try {
-      await resend.emails.send({
-        from: "Barbearia Cabanitas <onboarding@resend.dev>",
-        to: ["barbearia.cabanitas@example.com"], // TODO: Replace with actual email
+      await sendEmail({
+        to: process.env.BARBERSHOP_EMAIL || "barbearia.cabanitas@example.com",
         subject: `Nova Marcação: ${service} - ${name}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #000;">Nova Marcação Recebida 📅</h2>
-            
-            <div style="background-color: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 8px;">
-              <h3 style="margin-top: 0;">Detalhes da Marcação:</h3>
-              <p><strong>Serviço:</strong> ${service}</p>
-              <p><strong>Barbeiro:</strong> ${barber}</p>
-              <p><strong>Data:</strong> ${new Date(date).toLocaleDateString("pt-PT", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })}</p>
-              <p><strong>Hora:</strong> ${time}</p>
-              <p><strong>Cliente:</strong> ${name}</p>
-              <p><strong>Telefone:</strong> ${phone}</p>
-              ${email ? `<p><strong>Email:</strong> ${email}</p>` : ""}
-              ${observations ? `<p><strong>Observações:</strong> ${observations}</p>` : ""}
-            </div>
-
-            <p><strong>ID da Marcação:</strong> #${bookingId}</p>
-          </div>
-        `,
+        html: getAdminNotificationTemplate({
+          name,
+          service,
+          barber,
+          date: new Date(date).toLocaleDateString("pt-PT", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          }),
+          time,
+          phone,
+          email: email || undefined,
+          observations: observations || undefined,
+          bookingId,
+        }),
       });
     } catch (emailError) {
       console.error("Error sending notification email:", emailError);

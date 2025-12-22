@@ -252,14 +252,13 @@ export const bookingDb = {
     return result;
   },
 
-  // Get bookings that need reminders (30 minutes before)
+  // Get bookings that need reminders (1 day before)
   getBookingsNeedingReminders: async (): Promise<Booking[]> => {
     const result = await sql`
       SELECT * FROM bookings 
       WHERE status = 'confirmed' 
       AND reminder_sent = FALSE 
-      AND (date || ' ' || time)::timestamp <= NOW() + INTERVAL '30 minutes'
-      AND (date || ' ' || time)::timestamp > NOW()
+      AND date::date = CURRENT_DATE + INTERVAL '1 day'
     `;
     return result as Booking[];
   },
@@ -388,20 +387,20 @@ export const holidayDb = {
       console.warn("normalizeDate called with null/undefined");
       return '';
     }
-    
+
     // Convert to string if needed
     const dateStr = String(date);
-    
+
     // If date is already in YYYY-MM-DD format, return as is
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
       return dateStr;
     }
-    
+
     // If date has timezone info (ISO format), extract just the date part
     if (dateStr.includes('T')) {
       return dateStr.split('T')[0];
     }
-    
+
     // If date is in JavaScript Date string format (e.g., "Wed Jan 01 2025 00:00:00 GMT...")
     // Extract the date parts: "Wed Jan 01 2025" -> "2025-01-01"
     const dateStringMatch = dateStr.match(/(\w{3})\s+(\w{3})\s+(\d{1,2})\s+(\d{4})/);
@@ -416,7 +415,7 @@ export const holidayDb = {
       const year = dateStringMatch[4];
       return `${year}-${month}-${day}`;
     }
-    
+
     // If date has space (SQL format), extract just the date part
     if (dateStr.includes(' ')) {
       const parts = dateStr.split(' ');
@@ -429,13 +428,13 @@ export const holidayDb = {
       // If no YYYY-MM-DD found, try to parse the first part
       return parts[0];
     }
-    
+
     // If it's a valid date string in YYYY-MM-DD format but with extra characters, extract it
     const match = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
     if (match) {
       return match[1];
     }
-    
+
     // Last resort: try to parse as Date and format (only if all else fails)
     try {
       const dateObj = new Date(dateStr);
@@ -448,7 +447,7 @@ export const holidayDb = {
     } catch (e) {
       // Ignore
     }
-    
+
     // Last resort: return as is (shouldn't happen with proper data)
     console.warn("Could not normalize date:", dateStr);
     return dateStr;
@@ -482,7 +481,7 @@ export const holidayDb = {
       SET is_working = ${holiday.is_working ?? false}
       WHERE id = ${id}
     `;
-    
+
     // Optionally update name if provided (but keep date unchanged)
     if (holiday.name) {
       await sql`
@@ -497,10 +496,10 @@ export const holidayDb = {
   upsert: async (holiday: Holiday): Promise<number> => {
     // Normalize the date to ensure consistent format
     const normalizedDate = holidayDb.normalizeDate(holiday.date);
-    
+
     // First try to find existing holiday
     const existing = await holidayDb.getByDate(normalizedDate);
-    
+
     if (existing) {
       // Update existing
       await sql`
@@ -542,7 +541,7 @@ export async function initializeDatabase() {
 
     if (!tablesExist[0].exists) {
       console.log("Creating database tables...");
-      
+
       // Create bookings table
       await sql`
         CREATE TABLE bookings (

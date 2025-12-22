@@ -32,6 +32,25 @@ interface Booking {
   created_by: string;
 }
 
+// Translation functions
+const translateStatus = (status: string): string => {
+  const translations: { [key: string]: string } = {
+    'pending': 'Pendente',
+    'confirmed': 'Confirmado',
+    'completed': 'Concluído',
+    'cancelled': 'Cancelado',
+  };
+  return translations[status] || status;
+};
+
+const translateCreatedBy = (createdBy: string): string => {
+  const translations: { [key: string]: string } = {
+    'client': 'Cliente',
+    'admin': 'Admin',
+  };
+  return translations[createdBy] || createdBy;
+};
+
 export default function AdminDashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -48,7 +67,7 @@ export default function AdminDashboard() {
   const [holidays, setHolidays] = useState<Set<string>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [bookingToDelete, setBookingToDelete] = useState<Booking | null>(null);
-  
+
   const activeBarbers = getActiveBarbers();
 
   // Load holidays (always, regardless of barber selection)
@@ -61,7 +80,7 @@ export default function AdminDashboard() {
     const handleFocus = () => {
       loadHolidays();
     };
-    
+
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, []);
@@ -80,20 +99,20 @@ export default function AdminDashboard() {
     try {
       const closedHolidays = new Set<string>();
       const holidaysResponse = await fetch(`/api/holidays`);
-      
+
       if (!holidaysResponse.ok) {
         throw new Error(`HTTP error! status: ${holidaysResponse.status}`);
       }
-      
+
       const holidaysData = await holidaysResponse.json();
       console.log("📅 Loading holidays:", holidaysData);
-      
+
       if (!holidaysData || !Array.isArray(holidaysData.holidays)) {
         console.warn("⚠️ Invalid holidays data format:", holidaysData);
         setHolidays(new Set());
         return;
       }
-      
+
       holidaysData.holidays.forEach((h: any) => {
         // Block holiday if barbershop is closed (is_working = false)
         if (!h.is_working && h.date) {
@@ -125,7 +144,7 @@ export default function AdminDashboard() {
             console.warn("⚠️ Missing date for holiday:", h);
             return;
           }
-          
+
           // Validate date format
           if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
             closedHolidays.add(dateStr);
@@ -155,12 +174,12 @@ export default function AdminDashboard() {
         // Normalize dates to YYYY-MM-DD format (avoid timezone issues)
         const startDateStr = v.start_date.includes('T') ? v.start_date.split('T')[0] : v.start_date;
         const endDateStr = v.end_date.includes('T') ? v.end_date.split('T')[0] : v.end_date;
-        
+
         // Parse dates and iterate through them
         const start = new Date(startDateStr + 'T12:00:00'); // Use noon to avoid timezone issues
         const end = new Date(endDateStr + 'T12:00:00');
         const current = new Date(start);
-        
+
         while (current <= end) {
           // Format in local timezone
           const year = current.getFullYear();
@@ -320,7 +339,7 @@ export default function AdminDashboard() {
 
   const generateTimeSlots = () => {
     const slots: string[] = [];
-    
+
     // Morning slots: 08:30 - 13:00
     let hour = 8;
     let minute = 30;
@@ -332,7 +351,7 @@ export default function AdminDashboard() {
         hour += 1;
       }
     }
-    
+
     // Afternoon slots: 15:00 - 18:30
     hour = 15;
     minute = 0;
@@ -344,7 +363,7 @@ export default function AdminDashboard() {
         hour += 1;
       }
     }
-    
+
     return slots;
   };
 
@@ -376,10 +395,10 @@ export default function AdminDashboard() {
       const selectedDateObj = new Date(date);
       const selectedDay = selectedDateObj.getDay(); // 0 = Sunday, 6 = Saturday
       const isSaturday = selectedDay === 6;
-      
+
       // Get all possible slots
       let allSlots = generateTimeSlots();
-      
+
       // On Saturday, only show morning slots (08:30-13:00), block afternoon slots
       if (isSaturday) {
         allSlots = allSlots.filter(slot => {
@@ -387,18 +406,18 @@ export default function AdminDashboard() {
           return hour < 13; // Only morning slots (before 13:00)
         });
       }
-      
+
       // Get bookings for this date and barber
       const response = await fetch(`/api/bookings?date=${date}`);
       const data = await response.json();
       const dayBookings = (data.bookings || []).filter(
         (b: Booking) => b.barber === barber && b.status !== "cancelled"
       );
-      
+
       // Filter out booked slots
       const bookedTimes = dayBookings.map((b: Booking) => b.time);
       const available = allSlots.filter((slot) => !bookedTimes.includes(slot));
-      
+
       setAvailableSlots(available);
     } catch (error) {
       console.error("Error fetching available slots:", error);
@@ -530,18 +549,18 @@ export default function AdminDashboard() {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     const dateStr = `${year}-${month}-${day}`;
-    
+
     let dayBookings = bookings.filter((b) => {
       // Handle both formats: "2025-11-29" and "2025-11-29T00:00:00.000Z"
       const bookingDate = b.date.split('T')[0]; // Get only the date part
       return bookingDate === dateStr;
     });
-    
+
     // Apply barber filter
     if (selectedBarber !== "all") {
       dayBookings = dayBookings.filter((b) => b.barber === selectedBarber);
     }
-    
+
     console.log(`📅 Bookings for ${dateStr} (barber: ${selectedBarber}):`, dayBookings.length);
     return dayBookings;
   };
@@ -576,23 +595,21 @@ export default function AdminDashboard() {
               key={day.toISOString()}
               onClick={() => !isDisabled && setSelectedDate(day)}
               disabled={isDisabled}
-              className={`aspect-square p-2 md:p-3 lg:p-4 rounded-lg border-2 transition-all min-h-[48px] md:min-h-[64px] lg:min-h-[80px] ${
-                isDisabled
-                  ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-50"
-                  : isSelected
+              className={`aspect-square p-2 md:p-3 lg:p-4 rounded-lg border-2 transition-all min-h-[48px] md:min-h-[64px] lg:min-h-[80px] ${isDisabled
+                ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-50"
+                : isSelected
                   ? "bg-black text-white border-black"
                   : isToday
-                  ? "bg-gray-100 border-gray-300"
-                  : "border-gray-200 hover:bg-gray-50 hover:border-gray-300"
-              }`}
+                    ? "bg-gray-100 border-gray-300"
+                    : "border-gray-200 hover:bg-gray-50 hover:border-gray-300"
+                }`}
             >
               <div className="text-sm md:text-base lg:text-lg font-medium">{format(day, "d")}</div>
               {dayBookings.length > 0 && !isDisabled && (
                 <div className="mt-1 md:mt-2">
                   <div
-                    className={`text-xs md:text-sm lg:text-base font-semibold ${
-                      isSelected ? "text-white" : "text-black"
-                    }`}
+                    className={`text-xs md:text-sm lg:text-base font-semibold ${isSelected ? "text-white" : "text-black"
+                      }`}
                   >
                     {dayBookings.length}
                   </div>
@@ -680,12 +697,12 @@ export default function AdminDashboard() {
               <div className="mb-6 md:mb-8">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
                   <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold text-black">
-                    {viewMode === "day" 
+                    {viewMode === "day"
                       ? format(currentMonth, "MMMM yyyy", { locale: pt })
                       : `Semana de ${format(startOfWeek(selectedDate, { weekStartsOn: 1 }), "d MMM", { locale: pt })}`
                     }
                   </h2>
-                  
+
                   {/* View Mode Toggle */}
                   <div className="flex items-center gap-2">
                     <div className="flex gap-1 bg-gray-100 rounded-lg p-1 border border-gray-200">
@@ -693,11 +710,10 @@ export default function AdminDashboard() {
                         onClick={() => setViewMode("day")}
                         variant="ghost"
                         size="sm"
-                        className={`text-xs md:text-sm lg:text-base px-3 md:px-4 lg:px-5 py-2 md:py-2.5 h-[36px] md:h-[40px] font-medium transition-all ${
-                          viewMode === "day" 
-                            ? "bg-black text-white hover:bg-black/90 shadow-sm" 
-                            : "text-gray-700 hover:bg-gray-200"
-                        }`}
+                        className={`text-xs md:text-sm lg:text-base px-3 md:px-4 lg:px-5 py-2 md:py-2.5 h-[36px] md:h-[40px] font-medium transition-all ${viewMode === "day"
+                          ? "bg-black text-white hover:bg-black/90 shadow-sm"
+                          : "text-gray-700 hover:bg-gray-200"
+                          }`}
                       >
                         Mês
                       </Button>
@@ -705,11 +721,10 @@ export default function AdminDashboard() {
                         onClick={() => setViewMode("week")}
                         variant="ghost"
                         size="sm"
-                        className={`text-xs md:text-sm lg:text-base px-3 md:px-4 lg:px-5 py-2 md:py-2.5 h-[36px] md:h-[40px] font-medium transition-all ${
-                          viewMode === "week" 
-                            ? "bg-black text-white hover:bg-black/90 shadow-sm" 
-                            : "text-gray-700 hover:bg-gray-200"
-                        }`}
+                        className={`text-xs md:text-sm lg:text-base px-3 md:px-4 lg:px-5 py-2 md:py-2.5 h-[36px] md:h-[40px] font-medium transition-all ${viewMode === "week"
+                          ? "bg-black text-white hover:bg-black/90 shadow-sm"
+                          : "text-gray-700 hover:bg-gray-200"
+                          }`}
                       >
                         Semana
                       </Button>
@@ -735,7 +750,7 @@ export default function AdminDashboard() {
                   >
                     ← Anterior
                   </Button>
-                  
+
                   <Button
                     onClick={() => {
                       setCurrentMonth(new Date());
@@ -747,7 +762,7 @@ export default function AdminDashboard() {
                   >
                     Hoje
                   </Button>
-                  
+
                   <Button
                     onClick={() => {
                       if (viewMode === "week") {
@@ -774,7 +789,7 @@ export default function AdminDashboard() {
                   {getWeekDays().map((day) => {
                     const dayBookings = getDayBookings(day);
                     const isToday = isSameDay(day, new Date());
-                    
+
                     return (
                       <div key={day.toISOString()} className={`border-2 rounded-lg p-4 md:p-6 lg:p-8 ${isToday ? "border-black bg-gray-50" : "border-gray-200"}`}>
                         <div className="flex items-center justify-between mb-3 md:mb-4">
@@ -790,7 +805,7 @@ export default function AdminDashboard() {
                             {dayBookings.length} marcação{dayBookings.length !== 1 ? "ões" : ""}
                           </span>
                         </div>
-                        
+
                         {dayBookings.length === 0 ? (
                           <p className="text-gray-400 text-sm text-center py-4">Sem marcações</p>
                         ) : (
@@ -846,17 +861,16 @@ export default function AdminDashboard() {
                             <p className="text-sm md:text-base lg:text-lg text-gray-600">{booking.service}</p>
                           </div>
                           <span
-                            className={`text-xs md:text-sm lg:text-base px-2 md:px-3 lg:px-4 py-1 md:py-1.5 rounded-full font-medium ${
-                              booking.status === "confirmed"
-                                ? "bg-green-100 text-green-700"
-                                : booking.status === "completed"
+                            className={`text-xs md:text-sm lg:text-base px-2 md:px-3 lg:px-4 py-1 md:py-1.5 rounded-full font-medium ${booking.status === "confirmed"
+                              ? "bg-green-100 text-green-700"
+                              : booking.status === "completed"
                                 ? "bg-blue-100 text-blue-700"
                                 : booking.status === "cancelled"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-gray-100 text-gray-700"
-                            }`}
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-gray-100 text-gray-700"
+                              }`}
                           >
-                            {booking.status}
+                            {translateStatus(booking.status)}
                           </span>
                         </div>
                         <div className="space-y-1 md:space-y-2">
@@ -929,7 +943,7 @@ export default function AdminDashboard() {
                       )}
                       <div>
                         <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Criado por</p>
-                        <p className="font-medium text-black text-sm md:text-base lg:text-lg">{selectedBooking.created_by}</p>
+                        <p className="font-medium text-black text-sm md:text-base lg:text-lg">{translateCreatedBy(selectedBooking.created_by)}</p>
                       </div>
                     </div>
 
@@ -1003,7 +1017,7 @@ export default function AdminDashboard() {
             {/* Stepper */}
             <div className="flex items-center justify-between mb-6 md:mb-8">
               <div className="flex items-center flex-1">
-                <motion.div 
+                <motion.div
                   className={`flex items-center justify-center w-10 h-10 md:w-12 md:h-12 lg:w-14 lg:h-14 rounded-full font-bold text-sm md:text-base lg:text-lg`}
                   animate={{
                     backgroundColor: bookingStep >= 1 ? "#000000" : "#E5E7EB",
@@ -1014,7 +1028,7 @@ export default function AdminDashboard() {
                 >
                   1
                 </motion.div>
-                <motion.div 
+                <motion.div
                   className="flex-1 h-1 mx-2"
                   animate={{
                     backgroundColor: bookingStep >= 2 ? "#000000" : "#E5E7EB",
@@ -1025,7 +1039,7 @@ export default function AdminDashboard() {
                 ></motion.div>
               </div>
               <div className="flex items-center flex-1">
-                <motion.div 
+                <motion.div
                   className={`flex items-center justify-center w-10 h-10 md:w-12 md:h-12 lg:w-14 lg:h-14 rounded-full font-bold text-sm md:text-base lg:text-lg`}
                   animate={{
                     backgroundColor: bookingStep >= 2 ? "#000000" : "#E5E7EB",
@@ -1036,7 +1050,7 @@ export default function AdminDashboard() {
                 >
                   2
                 </motion.div>
-                <motion.div 
+                <motion.div
                   className="flex-1 h-1 md:h-1.5 mx-2"
                   animate={{
                     backgroundColor: bookingStep >= 3 ? "#000000" : "#E5E7EB",
@@ -1047,7 +1061,7 @@ export default function AdminDashboard() {
                 ></motion.div>
               </div>
               <div className="flex items-center">
-                <motion.div 
+                <motion.div
                   className={`flex items-center justify-center w-10 h-10 md:w-12 md:h-12 lg:w-14 lg:h-14 rounded-full font-bold text-sm md:text-base lg:text-lg`}
                   animate={{
                     backgroundColor: bookingStep >= 3 ? "#000000" : "#E5E7EB",
@@ -1090,160 +1104,159 @@ export default function AdminDashboard() {
                     transition={{ duration: 0.3 }}
                     className="space-y-6"
                   >
-                  <div>
-                    <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
-                      Serviço
-                    </label>
-                    <Select
-                      value={newBooking.service}
-                      onValueChange={(value) =>
-                        setNewBooking({ ...newBooking, service: value })
-                      }
-                    >
-                      <SelectTrigger className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 w-full h-[52px] md:h-[60px]">
-                        <SelectValue placeholder="Selecione o serviço" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Cabelo">Cabelo</SelectItem>
-                        <SelectItem value="Barba">Barba</SelectItem>
-                        <SelectItem value="Cabelo e Barba">Cabelo e Barba</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
-                      Barbeiro
-                    </label>
-                    <Select
-                      value={newBooking.barber}
-                      onValueChange={(value) =>
-                        setNewBooking({ ...newBooking, barber: value })
-                      }
-                    >
-                      <SelectTrigger className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 w-full h-[52px] md:h-[60px]">
-                        <SelectValue placeholder="Selecione o barbeiro" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {activeBarbers && activeBarbers.length > 0 && activeBarbers.map((barber) => (
-                          barber && barber.id && barber.name ? (
-                            <SelectItem key={barber.id} value={barber.name}>
-                              {barber.name || String(barber.id)}
-                            </SelectItem>
-                          ) : null
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-base font-medium text-gray-700">
-                        Data
+                    <div>
+                      <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
+                        Serviço
                       </label>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          loadHolidays();
-                          toast.info("Feriados atualizados");
-                        }}
-                        className="text-xs text-gray-500 hover:text-gray-700"
+                      <Select
+                        value={newBooking.service}
+                        onValueChange={(value) =>
+                          setNewBooking({ ...newBooking, service: value })
+                        }
                       >
-                        🔄 Atualizar
-                      </Button>
+                        <SelectTrigger className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 w-full h-[52px] md:h-[60px]">
+                          <SelectValue placeholder="Selecione o serviço" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Cabelo">Cabelo</SelectItem>
+                          <SelectItem value="Barba">Barba</SelectItem>
+                          <SelectItem value="Cabelo e Barba">Cabelo e Barba</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <Popover>
-                      <PopoverTrigger asChild>
+
+                    <div>
+                      <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
+                        Barbeiro
+                      </label>
+                      <Select
+                        value={newBooking.barber}
+                        onValueChange={(value) =>
+                          setNewBooking({ ...newBooking, barber: value })
+                        }
+                      >
+                        <SelectTrigger className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 w-full h-[52px] md:h-[60px]">
+                          <SelectValue placeholder="Selecione o barbeiro" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {activeBarbers && activeBarbers.length > 0 && activeBarbers.map((barber) => (
+                            barber && barber.id && barber.name ? (
+                              <SelectItem key={barber.id} value={barber.name}>
+                                {barber.name || String(barber.id)}
+                              </SelectItem>
+                            ) : null
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-base font-medium text-gray-700">
+                          Data
+                        </label>
                         <Button
-                          variant="outline"
-                          className={`w-full justify-start text-left font-normal text-base p-6 ${
-                            !newBooking.date && "text-muted-foreground"
-                          }`}
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            loadHolidays();
+                            toast.info("Feriados atualizados");
+                          }}
+                          className="text-xs text-gray-500 hover:text-gray-700"
                         >
-                          <CalendarIcon className="mr-2 h-5 w-5" />
-                          {newBooking.date ? (
-                            (() => {
+                          🔄 Atualizar
+                        </Button>
+                      </div>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className={`w-full justify-start text-left font-normal text-base p-6 ${!newBooking.date && "text-muted-foreground"
+                              }`}
+                          >
+                            <CalendarIcon className="mr-2 h-5 w-5" />
+                            {newBooking.date ? (
+                              (() => {
+                                // Parse YYYY-MM-DD string to Date in local timezone
+                                const [year, month, day] = newBooking.date.split('-').map(Number);
+                                return format(new Date(year, month - 1, day), "PPP", { locale: pt });
+                              })()
+                            ) : (
+                              <span>Selecione a data</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start" onOpenAutoFocus={() => loadHolidays()}>
+                          <Calendar
+                            mode="single"
+                            selected={newBooking.date ? (() => {
                               // Parse YYYY-MM-DD string to Date in local timezone
                               const [year, month, day] = newBooking.date.split('-').map(Number);
-                              return format(new Date(year, month - 1, day), "PPP", { locale: pt });
-                            })()
-                          ) : (
-                            <span>Selecione a data</span>
-                          )}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start" onOpenAutoFocus={() => loadHolidays()}>
-                        <Calendar
-                          mode="single"
-                          selected={newBooking.date ? (() => {
-                            // Parse YYYY-MM-DD string to Date in local timezone
-                            const [year, month, day] = newBooking.date.split('-').map(Number);
-                            return new Date(year, month - 1, day);
-                          })() : undefined}
-                          onSelect={(date) => {
-                            if (date) {
-                              // Format date to YYYY-MM-DD (use local timezone)
+                              return new Date(year, month - 1, day);
+                            })() : undefined}
+                            onSelect={(date) => {
+                              if (date) {
+                                // Format date to YYYY-MM-DD (use local timezone)
+                                const year = date.getFullYear();
+                                const month = String(date.getMonth() + 1).padStart(2, '0');
+                                const day = String(date.getDate()).padStart(2, '0');
+                                const dateStr = `${year}-${month}-${day}`;
+                                setNewBooking({
+                                  ...newBooking,
+                                  date: dateStr,
+                                  time: ""
+                                });
+                              }
+                            }}
+                            locale={pt}
+                            disabled={(date) => {
+                              // Get date in local timezone (avoid UTC conversion issues)
                               const year = date.getFullYear();
                               const month = String(date.getMonth() + 1).padStart(2, '0');
                               const day = String(date.getDate()).padStart(2, '0');
                               const dateStr = `${year}-${month}-${day}`;
-                              setNewBooking({
-                                ...newBooking,
-                                date: dateStr,
-                                time: ""
-                              });
-                            }
-                          }}
-                          locale={pt}
-                          disabled={(date) => {
-                            // Get date in local timezone (avoid UTC conversion issues)
-                            const year = date.getFullYear();
-                            const month = String(date.getMonth() + 1).padStart(2, '0');
-                            const day = String(date.getDate()).padStart(2, '0');
-                            const dateStr = `${year}-${month}-${day}`;
 
-                            // Get today in local timezone
-                            const today = new Date();
-                            const todayYear = today.getFullYear();
-                            const todayMonth = String(today.getMonth() + 1).padStart(2, '0');
-                            const todayDay = String(today.getDate()).padStart(2, '0');
-                            const todayStr = `${todayYear}-${todayMonth}-${todayDay}`;
+                              // Get today in local timezone
+                              const today = new Date();
+                              const todayYear = today.getFullYear();
+                              const todayMonth = String(today.getMonth() + 1).padStart(2, '0');
+                              const todayDay = String(today.getDate()).padStart(2, '0');
+                              const todayStr = `${todayYear}-${todayMonth}-${todayDay}`;
 
-                            // Block past dates
-                            if (dateStr < todayStr) return true;
-                            
-                            // Block Sundays
-                            if (date.getDay() === 0) return true;
-                            
-                            // Block holidays when barbershop is closed (always, regardless of barber)
-                            const isBlocked = holidays.has(dateStr);
-                            if (isBlocked) {
-                              console.log("🚫 Date blocked (holiday in modal):", dateStr, "Current holidays:", Array.from(holidays).sort());
-                              return true;
-                            } else {
-                              // Debug: log when checking a date that should be blocked
-                              if (dateStr === "2026-08-15") {
-                                console.log("🔍 Modal checking 2026-08-15 - holidays set:", Array.from(holidays).sort(), "has:", holidays.has(dateStr));
-                              }
-                            }
-                            
-                            // Block if barber is on vacation (only if a specific barber is selected)
-                            if (newBooking.barber && newBooking.barber !== "all") {
-                              if (blockedDates.has(dateStr)) {
-                                console.log("🚫 Date blocked (vacation):", dateStr);
+                              // Block past dates
+                              if (dateStr < todayStr) return true;
+
+                              // Block Sundays
+                              if (date.getDay() === 0) return true;
+
+                              // Block holidays when barbershop is closed (always, regardless of barber)
+                              const isBlocked = holidays.has(dateStr);
+                              if (isBlocked) {
+                                console.log("🚫 Date blocked (holiday in modal):", dateStr, "Current holidays:", Array.from(holidays).sort());
                                 return true;
+                              } else {
+                                // Debug: log when checking a date that should be blocked
+                                if (dateStr === "2026-08-15") {
+                                  console.log("🔍 Modal checking 2026-08-15 - holidays set:", Array.from(holidays).sort(), "has:", holidays.has(dateStr));
+                                }
                               }
-                            }
-                            
-                            return false;
-                          }}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
+
+                              // Block if barber is on vacation (only if a specific barber is selected)
+                              if (newBooking.barber && newBooking.barber !== "all") {
+                                if (blockedDates.has(dateStr)) {
+                                  console.log("🚫 Date blocked (vacation):", dateStr);
+                                  return true;
+                                }
+                              }
+
+                              return false;
+                            }}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
 
                     <div className="flex justify-end">
                       <Button
@@ -1267,36 +1280,35 @@ export default function AdminDashboard() {
                     transition={{ duration: 0.3 }}
                     className="space-y-6"
                   >
-                  <div>
-                    <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-3 md:mb-4">
-                      Horário Disponível <span className="text-red-500">*</span>
-                    </label>
-                    {availableSlots.length === 0 ? (
-                      <div className="p-6 md:p-8 lg:p-10 bg-gray-100 rounded-md text-center text-gray-600 text-sm md:text-base lg:text-lg">
-                        Sem horários disponíveis para esta data
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4 max-h-96 overflow-y-auto p-4 md:p-5 border-2 border-gray-300 rounded-md">
-                        {availableSlots.map((slot) => (
-                          <button
-                            key={slot}
-                            type="button"
-                            onClick={() => setNewBooking({ ...newBooking, time: slot })}
-                            className={`p-3 md:p-4 lg:p-5 text-sm md:text-base lg:text-lg font-medium rounded-lg transition-all min-h-[52px] md:min-h-[60px] ${
-                              newBooking.time === slot
+                    <div>
+                      <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-3 md:mb-4">
+                        Horário Disponível <span className="text-red-500">*</span>
+                      </label>
+                      {availableSlots.length === 0 ? (
+                        <div className="p-6 md:p-8 lg:p-10 bg-gray-100 rounded-md text-center text-gray-600 text-sm md:text-base lg:text-lg">
+                          Sem horários disponíveis para esta data
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4 max-h-96 overflow-y-auto p-4 md:p-5 border-2 border-gray-300 rounded-md">
+                          {availableSlots.map((slot) => (
+                            <button
+                              key={slot}
+                              type="button"
+                              onClick={() => setNewBooking({ ...newBooking, time: slot })}
+                              className={`p-3 md:p-4 lg:p-5 text-sm md:text-base lg:text-lg font-medium rounded-lg transition-all min-h-[52px] md:min-h-[60px] ${newBooking.time === slot
                                 ? "bg-black text-white ring-2 ring-black"
                                 : "bg-gray-100 hover:bg-gray-200 text-black"
-                            }`}
-                          >
-                            {slot}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <p className="text-xs md:text-sm lg:text-base text-gray-500 mt-3 md:mt-4">
-                      Horários: 08:30-13:00 (manhã) e 15:00-18:30 (tarde) • Slots de 30 minutos
-                    </p>
-                  </div>
+                                }`}
+                            >
+                              {slot}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <p className="text-xs md:text-sm lg:text-base text-gray-500 mt-3 md:mt-4">
+                        Horários: 08:30-13:00 (manhã) e 15:00-18:30 (tarde) • Slots de 30 minutos
+                      </p>
+                    </div>
 
                     <div className="flex gap-3 md:gap-4">
                       <Button
@@ -1334,70 +1346,70 @@ export default function AdminDashboard() {
                     transition={{ duration: 0.3 }}
                     className="space-y-6"
                   >
-                  <div>
-                    <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
-                      Nome <span className="text-red-500">*</span>
-                    </label>
-                    <Input
-                      type="text"
-                      value={newBooking.name}
-                      onChange={(e) =>
-                        setNewBooking({ ...newBooking, name: e.target.value })
-                      }
-                      className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 h-[52px] md:h-[60px]"
-                      placeholder="Nome do cliente"
-                      required
-                    />
-                  </div>
+                    <div>
+                      <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
+                        Nome <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        value={newBooking.name}
+                        onChange={(e) =>
+                          setNewBooking({ ...newBooking, name: e.target.value })
+                        }
+                        className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 h-[52px] md:h-[60px]"
+                        placeholder="Nome do cliente"
+                        required
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
-                      Telefone <span className="text-red-500">*</span>
-                    </label>
-                    <Input
-                      type="tel"
-                      value={newBooking.phone}
-                      onChange={(e) =>
-                        setNewBooking({ ...newBooking, phone: e.target.value })
-                      }
-                      className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 h-[52px] md:h-[60px]"
-                      placeholder="+351 XXX XXX XXX"
-                      required
-                    />
-                  </div>
+                    <div>
+                      <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
+                        Telefone <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="tel"
+                        value={newBooking.phone}
+                        onChange={(e) =>
+                          setNewBooking({ ...newBooking, phone: e.target.value })
+                        }
+                        className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 h-[52px] md:h-[60px]"
+                        placeholder="+351 XXX XXX XXX"
+                        required
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
-                      Email <span className="text-gray-400 text-xs md:text-sm">(opcional - necessário para lembretes)</span>
-                    </label>
-                    <Input
-                      type="email"
-                      value={newBooking.email}
-                      onChange={(e) =>
-                        setNewBooking({ ...newBooking, email: e.target.value })
-                      }
-                      className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 h-[52px] md:h-[60px]"
-                      placeholder="email@exemplo.com"
-                    />
-                    <p className="text-xs md:text-sm lg:text-base text-gray-500 mt-1 md:mt-2">
-                      Se fornecer email, o cliente receberá confirmação e lembretes automáticos
-                    </p>
-                  </div>
+                    <div>
+                      <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
+                        Email <span className="text-gray-400 text-xs md:text-sm">(opcional - necessário para lembretes)</span>
+                      </label>
+                      <Input
+                        type="email"
+                        value={newBooking.email}
+                        onChange={(e) =>
+                          setNewBooking({ ...newBooking, email: e.target.value })
+                        }
+                        className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 h-[52px] md:h-[60px]"
+                        placeholder="email@exemplo.com"
+                      />
+                      <p className="text-xs md:text-sm lg:text-base text-gray-500 mt-1 md:mt-2">
+                        Se fornecer email, o cliente receberá confirmação e lembretes automáticos
+                      </p>
+                    </div>
 
-                  <div>
-                    <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
-                      Observações <span className="text-gray-400 text-xs md:text-sm">(opcional)</span>
-                    </label>
-                    <Textarea
-                      value={newBooking.observations}
-                      onChange={(e) =>
-                        setNewBooking({ ...newBooking, observations: e.target.value })
-                      }
-                      rows={4}
-                      className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 min-h-[100px] md:min-h-[120px]"
-                      placeholder="Notas adicionais sobre a marcação..."
-                    />
-                  </div>
+                    <div>
+                      <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
+                        Observações <span className="text-gray-400 text-xs md:text-sm">(opcional)</span>
+                      </label>
+                      <Textarea
+                        value={newBooking.observations}
+                        onChange={(e) =>
+                          setNewBooking({ ...newBooking, observations: e.target.value })
+                        }
+                        rows={4}
+                        className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 min-h-[100px] md:min-h-[120px]"
+                        placeholder="Notas adicionais sobre a marcação..."
+                      />
+                    </div>
 
                     <div className="flex gap-3 md:gap-4 pt-4 md:pt-6">
                       <Button

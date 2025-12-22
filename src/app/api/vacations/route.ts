@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { vacationDb } from "@/lib/db";
-import { Resend } from "resend";
+import { sendEmail } from "@/lib/email";
 import { bookingDb } from "@/lib/db";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { getVacationEmailTemplate } from "@/lib/email-templates";
 
 // GET - Get all vacations
 export async function GET(req: NextRequest) {
@@ -54,28 +53,28 @@ export async function POST(req: NextRequest) {
 
     // Get all clients who have bookings with THIS SPECIFIC barber only
     const bookings = await bookingDb.getByBarber(barber);
-    
+
     // Filter clients: must have email and at least one confirmed or upcoming booking with this barber
     // Also check if they have bookings that might be affected by the vacation period
     const vacationStart = new Date(start_date);
     const vacationEnd = new Date(end_date);
-    
+
     const clientsWithEmail = bookings
       .filter((b) => {
         // Must have email
         if (!b.email) return false;
-        
+
         // Must have a booking that is confirmed or upcoming (not cancelled)
         if (b.status === "cancelled") return false;
-        
+
         // Check if booking date is in the future or overlaps with vacation period
         const bookingDate = new Date(b.date);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        
+
         // Include if booking is in the future or overlaps with vacation
-        return bookingDate >= today || 
-               (bookingDate >= vacationStart && bookingDate <= vacationEnd);
+        return bookingDate >= today ||
+          (bookingDate >= vacationStart && bookingDate <= vacationEnd);
       })
       .map((b) => ({ email: b.email!, name: b.name, barber: b.barber }));
 
@@ -87,43 +86,23 @@ export async function POST(req: NextRequest) {
     // Send notification emails
     const emailPromises = uniqueClients.map(async (client) => {
       try {
-        await resend.emails.send({
-          from: "Barbearia Cabanitas <onboarding@resend.dev>",
-          to: [client.email],
+        await sendEmail({
+          to: client.email,
           subject: `Aviso: Férias do Barbeiro ${barber} - Barbearia Cabanitas`,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #000;">Aviso de Férias 🏖️</h2>
-              <p>Olá ${client.name},</p>
-              <p>Informamos que o barbeiro <strong>${barber}</strong> estará de férias no período indicado abaixo.</p>
-              
-              <div style="background-color: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 8px;">
-                <h3 style="margin-top: 0;">Período de Férias:</h3>
-                <p><strong>De:</strong> ${new Date(start_date).toLocaleDateString("pt-PT", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}</p>
-                <p><strong>Até:</strong> ${new Date(end_date).toLocaleDateString("pt-PT", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}</p>
-              </div>
-
-              <p>Durante este período, não será possível fazer marcações com este barbeiro.</p>
-              <p>Se tiver alguma marcação agendada para este período, entraremos em contacto consigo.</p>
-              
-              <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
-              
-              <p style="color: #666; font-size: 14px;">
-                <strong>Barbearia Cabanitas</strong><br>
-                Rua Capitão João Francisco de Sousa nº36<br>
-                7800-451 Beja<br>
-                📞 +351 963 242 206
-              </p>
-            </div>
-          `,
+          html: getVacationEmailTemplate({
+            name: client.name,
+            barber,
+            startDate: new Date(start_date).toLocaleDateString("pt-PT", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            }),
+            endDate: new Date(end_date).toLocaleDateString("pt-PT", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            }),
+          }),
         });
       } catch (emailError) {
         console.error(`Error sending email to ${client.email}:`, emailError);
