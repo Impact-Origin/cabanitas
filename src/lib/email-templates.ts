@@ -7,6 +7,7 @@ interface EmailTemplateParams {
   barber?: string;
   date?: string;
   time?: string;
+  duration?: string;
   observations?: string;
   bookingId?: number;
   phone?: string;
@@ -151,6 +152,10 @@ export function getConfirmationEmailTemplate(params: EmailTemplateParams): strin
               <span class="info-label">Hora:</span>
               <span class="info-value">${params.time}</span>
             </div>
+            <div class="info-row">
+              <span class="info-label">Duração:</span>
+              <span class="info-value">${params.duration === '1h' ? '1 hora (2 pessoas)' : '30 minutos'}</span>
+            </div>
             ${params.observations ? `
             <div class="info-row">
               <span class="info-label">Observações:</span>
@@ -222,6 +227,12 @@ export function getReminderEmailTemplate(params: EmailTemplateParams): string {
               <span class="info-label">Hora:</span>
               <span class="info-value">${params.time}</span>
             </div>
+            ${params.duration ? `
+            <div class="info-row">
+              <span class="info-label">Duração:</span>
+              <span class="info-value">${params.duration === '1h' ? '1 hora (2 pessoas)' : '30 minutos'}</span>
+            </div>
+            ` : ''}
           </div>
           
           <p>Aguardamos a sua visita.</p>
@@ -340,6 +351,12 @@ export function getAdminNotificationTemplate(params: EmailTemplateParams): strin
               <span class="info-label">Hora:</span>
               <span class="info-value">${params.time}</span>
             </div>
+            ${params.duration ? `
+            <div class="info-row">
+              <span class="info-label">Duração:</span>
+              <span class="info-value">${params.duration === '1h' ? '1 hora (2 pessoas)' : '30 minutos'}</span>
+            </div>
+            ` : ''}
           </div>
           
           <div class="info-box" style="background-color: #f0f0f0;">

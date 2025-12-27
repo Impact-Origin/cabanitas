@@ -11,6 +11,7 @@ CREATE TABLE bookings (
   barber VARCHAR(255) NOT NULL,
   date DATE NOT NULL,
   time VARCHAR(10) NOT NULL,
+  duration VARCHAR(10) DEFAULT '30min',
   name VARCHAR(255) NOT NULL,
   phone VARCHAR(50) NOT NULL,
   email VARCHAR(255),
@@ -58,8 +59,8 @@ CREATE INDEX idx_vacations_barber ON vacations(barber);
 CREATE INDEX idx_vacations_dates ON vacations(start_date, end_date);
 CREATE INDEX idx_holidays_date ON holidays(date);
 
--- Create unique constraint to prevent double bookings
-CREATE UNIQUE INDEX idx_unique_booking ON bookings(date, time, barber) WHERE status != 'cancelled';
+-- Note: Removed unique constraint to allow double bookings (2 people per time slot)
+-- Each booking occupies 1 hour (current slot + next 30min slot)
 
 -- Comments for documentation
 COMMENT ON TABLE bookings IS 'Stores all barbershop bookings';

@@ -17,6 +17,7 @@ interface BookingData {
   barber: string;
   date: Date | null;
   time: string;
+  duration: "30min" | "1h"; // Duration of the booking
   name: string;
   phone: string;
   email: string;
@@ -39,6 +40,7 @@ export function BookingWizard() {
     barber: "",
     date: null,
     time: "",
+    duration: "1h", // Default to 1 hour
     name: "",
     phone: "",
     email: "",
@@ -159,6 +161,20 @@ export function BookingWizard() {
     setBookingData({ ...bookingData, date, time: "" });
   };
 
+  // Helper function to get next time slot (add 30 minutes)
+  const getNextTimeSlot = (time: string): string => {
+    const [hours, minutes] = time.split(':').map(Number);
+    let nextHours = hours;
+    let nextMinutes = minutes + 30;
+    
+    if (nextMinutes >= 60) {
+      nextMinutes = 0;
+      nextHours += 1;
+    }
+    
+    return `${String(nextHours).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}`;
+  };
+
   // Generate all possible time slots
   const generateTimeSlots = () => {
     const slots: string[] = [];
@@ -190,12 +206,12 @@ export function BookingWizard() {
     return slots;
   };
 
-  // Fetch available slots when date is selected
+  // Fetch available slots when date, barber, or duration changes
   useEffect(() => {
-    if (selectedDate && bookingData.barber) {
+    if (selectedDate && bookingData.barber && bookingData.duration) {
       fetchAvailableSlots();
     }
-  }, [selectedDate, bookingData.barber]);
+  }, [selectedDate, bookingData.barber, bookingData.duration]);
 
   const fetchAvailableSlots = async () => {
     if (!selectedDate) return;
@@ -252,13 +268,145 @@ export function BookingWizard() {
       const response = await fetch(`/api/bookings?date=${formattedDate}`);
       const data = await response.json();
       
-      // Filter out booked slots for this barber
+      // Filter bookings for this barber
       const dayBookings = (data.bookings || []).filter(
         (b: any) => b.barber === barberName && b.status !== "cancelled"
       );
       
-      const bookedTimes = dayBookings.map((b: any) => b.time);
-      const available = allSlots.filter((slot) => !bookedTimes.includes(slot));
+      // Helper to get previous time slot
+      const getPreviousTimeSlot = (time: string): string => {
+        const [hours, minutes] = time.split(':').map(Number);
+        let prevHours = hours;
+        let prevMinutes = minutes - 30;
+        
+        if (prevMinutes < 0) {
+          prevMinutes = 30;
+          prevHours -= 1;
+        }
+        
+        if (prevHours < 0) {
+          return ''; // No previous slot
+        }
+        
+        return `${String(prevHours).padStart(2, '0')}:${String(prevMinutes).padStart(2, '0')}`;
+      };
+      
+      // Count bookings per time slot
+      // We need to count:
+      // 1. Bookings that start at this slot (any duration)
+      // 2. 1h bookings that started at previous slot (they occupy current slot too)
+      const bookingsByTime: Record<string, number> = {};
+      
+      allSlots.forEach((slot) => {
+        let count = 0;
+        const prevSlot = getPreviousTimeSlot(slot);
+        
+        dayBookings.forEach((b: any) => {
+          // Count bookings starting at this slot
+          if (b.time === slot) {
+            count++;
+          }
+          // Count 1h bookings from previous slot (they occupy this slot too)
+          if (b.time === prevSlot && b.duration === "1h") {
+            count++;
+          }
+        });
+        
+        bookingsByTime[slot] = count;
+      });
+      
+      // Filter available slots based on selected duration
+      const currentDuration = bookingData.duration || "1h";
+      
+      const available = allSlots.filter((slot) => {
+        const currentCount = bookingsByTime[slot] || 0;
+        const [currentHours, currentMinutes] = slot.split(':').map(Number);
+        
+        // If duration is 30 minutes, check if slot is completely free (no bookings)
+        // 30min bookings are for 1 person only, no double booking
+        if (currentDuration === "30min") {
+          // For 30-minute bookings, slot must be completely free (0 bookings)
+          return currentCount === 0;
+        }
+        
+        // If duration is 1 hour, check both current and next slots
+        // FIRST: Block 12:30 for 1-hour bookings (would end at 13:00, lunch time)
+        if (currentHours === 12 && currentMinutes === 30) {
+          return false; // Can't book 1 hour starting at 12:30 (would end at 13:00)
+        }
+        
+        // Block 18:30 for 1-hour bookings (would end at 19:00, after closing)
+        if (currentHours === 18 && currentMinutes === 30) {
+          return false; // Can't book 1 hour starting at 18:30 (would end at 19:00)
+        }
+        
+        const nextSlot = getNextTimeSlot(slot);
+        const nextCount = bookingsByTime[nextSlot] || 0;
+        
+        // Check if next slot is within valid time range
+        const [nextHours, nextMinutes] = nextSlot.split(':').map(Number);
+        
+        const isValidNextSlot = 
+          (nextHours < 13 || (nextHours === 13 && nextMinutes === 0)) || // Morning
+          (nextHours >= 15 && (nextHours < 18 || (nextHours === 18 && nextMinutes <= 30))); // Afternoon
+        
+        // On Saturday, next slot must be in morning
+        if (isSaturday) {
+          const isNextSlotInMorning = nextHours < 13 || (nextHours === 13 && nextMinutes === 0);
+          if (!isNextSlotInMorning) {
+            return false; // Can't book if next slot would be in afternoon on Saturday
+          }
+        }
+        
+        // For 1h bookings:
+        // - Current slot must have space for a 1h booking
+        // - Next slot must be completely free (0 bookings)
+        // 
+        // Important: currentCount already includes:
+        // 1. Bookings starting at current slot (any duration)
+        // 2. 1h bookings from previous slot (they occupy current slot too)
+        //
+        // So if currentCount >= 1, it means:
+        // - Either there's already a booking starting here
+        // - Or there's a 1h booking from previous slot occupying this slot
+        // In both cases, we can still add ONE more 1h booking (double booking)
+        //
+        // But we need to check what TYPE of bookings are in the current slot:
+        // - If there's a 1h booking starting here → can add another 1h (double)
+        // - If there's a 1h booking from previous slot → can't add (would need current+next free)
+        // - If there's a 30min booking → can't add 1h (30min takes the whole slot alone)
+        
+        // Check if there's any 30min booking in current slot
+        const has30minInCurrent = dayBookings.some((b: any) => 
+          b.time === slot && b.duration === "30min"
+        );
+        
+        // If there's a 30min booking, can't book 1h here
+        if (has30minInCurrent) {
+          return false;
+        }
+        
+        // Check if current slot is occupied by a 1h booking from previous slot
+        const prevSlot = getPreviousTimeSlot(slot);
+        const has1hFromPrevSlot = dayBookings.some((b: any) => 
+          b.time === prevSlot && b.duration === "1h"
+        );
+        
+        // If current slot is occupied by a 1h booking from previous slot, can't book here
+        if (has1hFromPrevSlot) {
+          return false;
+        }
+        
+        // Check how many 1h bookings START at this slot (not including ones from previous slot)
+        const oneHourBookingsStartingHere = dayBookings.filter((b: any) => 
+          b.time === slot && b.duration === "1h"
+        ).length;
+        
+        // Can add a 1h booking if:
+        // 1. Less than 2 bookings starting at this slot (allows double booking)
+        // 2. Next slot is completely free (needed for the 1h duration)
+        return oneHourBookingsStartingHere < 2 && nextCount === 0 && isValidNextSlot;
+      });
       
       setAvailableSlots(available);
     } catch (error) {
@@ -314,6 +462,7 @@ export function BookingWizard() {
           barber: barberName,
           date: formattedDate,
           time: bookingData.time,
+          duration: bookingData.duration,
           name: bookingData.name,
           phone: bookingData.phone,
           email: bookingData.email || null,
@@ -571,7 +720,7 @@ export function BookingWizard() {
                 <div className="grid grid-cols-7 gap-1">{renderCalendar()}</div>
               </div>
 
-              {/* Time slots */}
+              {/* Duration Selection */}
               {selectedDate && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
@@ -581,8 +730,59 @@ export function BookingWizard() {
                 >
                   <div className="border-t border-gray-200 pt-4">
                     <h4 className="text-sm font-medium text-gray-600 mb-3 text-center">
-                      Horários Disponíveis
+                      Duração da Marcação
                     </h4>
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                      <button
+                        onClick={() => {
+                          // Just update the state, useEffect will handle fetching
+                          setBookingData({ ...bookingData, duration: "30min" as const, time: "" });
+                        }}
+                        className={`p-3 rounded-lg border transition-all text-sm font-medium cursor-pointer ${
+                          bookingData.duration === "30min"
+                            ? "bg-black text-white border-black"
+                            : "border-gray-200 hover:bg-gray-50 text-black"
+                        }`}
+                      >
+                        30 minutos
+                      </button>
+                      <button
+                        onClick={() => {
+                          // Just update the state, useEffect will handle fetching
+                          setBookingData({ ...bookingData, duration: "1h" as const, time: "" });
+                        }}
+                        className={`p-3 rounded-lg border transition-all text-sm font-medium cursor-pointer ${
+                          bookingData.duration === "1h"
+                            ? "bg-black text-white border-black"
+                            : "border-gray-200 hover:bg-gray-50 text-black"
+                        }`}
+                      >
+                        <div className="flex flex-col items-center">
+                          <span>1 hora completa</span>
+                          <span className="text-[10px] mt-0.5 opacity-75">
+                            (2 pessoas)
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Time slots */}
+              {selectedDate && bookingData.duration && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  transition={{ duration: 0.4 }}
+                  className="space-y-4"
+                >
+                  <div className="border-t border-gray-200 pt-4">
+                    <div className="text-center mb-3">
+                      <h4 className="text-sm font-medium text-gray-600 mb-1">
+                        Horários Disponíveis
+                      </h4>
+                    </div>
                     
                     {isLoadingSlots ? (
                       <div className="text-center py-8 text-gray-500">
@@ -607,19 +807,27 @@ export function BookingWizard() {
                               {availableSlots
                                 .filter(slot => {
                                   const hour = parseInt(slot.split(':')[0]);
+                                  // Include slots from 08:30 to 12:30 (hour 8-12, all minutes)
                                   return hour >= 8 && hour < 13;
                                 })
                                 .map((time) => (
                                   <button
                                     key={time}
                                     onClick={() => handleTimeSelect(time)}
-                                    className={`p-3 rounded-lg border transition-all text-sm font-medium ${
+                                    className={`p-3 rounded-lg border transition-all text-sm font-medium relative ${
                                       bookingData.time === time
                                         ? "bg-black text-white border-black"
                                         : "border-gray-200 hover:bg-gray-50 text-black"
                                     }`}
                                   >
-                                    {time}
+                                    <div className="flex flex-col items-center">
+                                      <span>{time}</span>
+                                      {bookingData.duration === "1h" && (
+                                        <span className="text-[10px] mt-0.5 opacity-75">
+                                          2 pessoas
+                                        </span>
+                                      )}
+                                    </div>
                                   </button>
                                 ))}
                             </div>
@@ -639,19 +847,27 @@ export function BookingWizard() {
                               {availableSlots
                                 .filter(slot => {
                                   const hour = parseInt(slot.split(':')[0]);
+                                  // Include slots from 15:00 to 18:30 (hour 15-18, all minutes)
                                   return hour >= 15;
                                 })
                                 .map((time) => (
                                   <button
                                     key={time}
                                     onClick={() => handleTimeSelect(time)}
-                                    className={`p-3 rounded-lg border transition-all text-sm font-medium ${
+                                    className={`p-3 rounded-lg border transition-all text-sm font-medium relative ${
                                       bookingData.time === time
                                         ? "bg-black text-white border-black"
                                         : "border-gray-200 hover:bg-gray-50 text-black"
                                     }`}
                                   >
-                                    {time}
+                                    <div className="flex flex-col items-center">
+                                      <span>{time}</span>
+                                      {bookingData.duration === "1h" && (
+                                        <span className="text-[10px] mt-0.5 opacity-75">
+                                          2 pessoas
+                                        </span>
+                                      )}
+                                    </div>
                                   </button>
                                 ))}
                             </div>
@@ -660,9 +876,22 @@ export function BookingWizard() {
                       </>
                     )}
                     
-                    <p className="text-xs text-gray-400 text-center mt-3">
-                      Horários de meia em meia hora • Fechado para almoço: 13:00-15:00
-                    </p>
+                    <div className="text-center mt-3 space-y-1">
+                      {bookingData.duration === "1h" ? (
+                        <>
+                          <p className="text-xs text-gray-400">
+                            Marcação de 1 hora ocupa 2 slots consecutivos
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            Fechado para almoço: 13:00-15:00
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-xs text-gray-400">
+                          Horários de meia em meia hora • Fechado para almoço: 13:00-15:00
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   <Button
@@ -704,6 +933,11 @@ export function BookingWizard() {
                 <p className="text-sm text-gray-500">
                   com {barbers.find((b) => b.id === bookingData.barber)?.name}
                 </p>
+                {bookingData.duration === "1h" && (
+                  <p className="text-xs font-medium text-black bg-yellow-50 py-1.5 px-3 rounded-md inline-block mt-2">
+                    ⚡ Marcação de 1 hora - Permite 2 pessoas
+                  </p>
+                )}
               </div>
 
               <div className="space-y-3 px-6">
@@ -832,7 +1066,7 @@ export function BookingWizard() {
                 </p>
                 <p className="text-sm">
                   <span className="font-medium">Hora:</span>{" "}
-                  {bookingData.time}
+                  {bookingData.time} ({bookingData.duration === "1h" ? "1 hora" : "30 minutos"})
                 </p>
               </div>
 
@@ -844,6 +1078,7 @@ export function BookingWizard() {
                     barber: "",
                     date: null,
                     time: "",
+                    duration: "1h",
                     name: "",
                     phone: "",
                     email: "",

@@ -50,6 +50,7 @@ export async function GET(request: Request) {
                 year: "numeric",
               }),
               time: booking.time,
+              duration: booking.duration || "30min",
             }),
           });
 

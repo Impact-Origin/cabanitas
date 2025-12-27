@@ -50,6 +50,7 @@ export async function GET(request: Request) {
             year: "numeric",
           }),
           time: "10:00",
+          duration: "1h",
         }),
       });
 
@@ -93,4 +94,5 @@ export async function GET(request: Request) {
     );
   }
 }
+
 

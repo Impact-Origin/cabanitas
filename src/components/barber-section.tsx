@@ -27,7 +27,7 @@ export function BarberSection() {
               </p>
               <div className="w-16 h-1 bg-black mx-auto mb-6"></div>
               <p className="text-lg text-black/70 leading-relaxed">
-                Com mais de 15 anos de experiência na arte da barbearia, o Edgar traz 
+                Com mais de 7 anos de experiência na arte da barbearia, o Edgar traz 
                 uma perícia e paixão incomparáveis a cada corte. Formado em técnicas 
                 clássicas e contemporâneas, garante que cada cliente sai com a melhor 
                 aparência e sensação.

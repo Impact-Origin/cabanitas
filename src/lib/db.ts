@@ -10,6 +10,7 @@ export interface Booking {
   barber: string;
   date: string;
   time: string;
+  duration?: "30min" | "1h"; // Duration of the booking
   name: string;
   phone: string;
   email?: string | null;
@@ -45,17 +46,50 @@ export interface Holiday {
   created_at?: string;
 }
 
+// Helper function to get next time slot (add 30 minutes)
+function getNextTimeSlot(time: string): string {
+  const [hours, minutes] = time.split(':').map(Number);
+  let nextHours = hours;
+  let nextMinutes = minutes + 30;
+  
+  if (nextMinutes >= 60) {
+    nextMinutes = 0;
+    nextHours += 1;
+  }
+  
+  return `${String(nextHours).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}`;
+}
+
+// Helper function to get previous time slot (subtract 30 minutes)
+function getPreviousTimeSlot(time: string): string {
+  const [hours, minutes] = time.split(':').map(Number);
+  let prevHours = hours;
+  let prevMinutes = minutes - 30;
+  
+  if (prevMinutes < 0) {
+    prevMinutes = 30;
+    prevHours -= 1;
+  }
+  
+  if (prevHours < 0) {
+    return ''; // No previous slot (before opening time)
+  }
+  
+  return `${String(prevHours).padStart(2, '0')}:${String(prevMinutes).padStart(2, '0')}`;
+}
+
 // Database functions
 export const bookingDb = {
   // Create booking
   create: async (booking: Booking): Promise<number> => {
     const result = await sql`
-      INSERT INTO bookings (service, barber, date, time, name, phone, email, observations, created_by, status)
+      INSERT INTO bookings (service, barber, date, time, duration, name, phone, email, observations, created_by, status)
       VALUES (
         ${booking.service},
         ${booking.barber},
         ${booking.date},
         ${booking.time},
+        ${booking.duration || "30min"},
         ${booking.name},
         ${booking.phone},
         ${booking.email || null},
@@ -153,10 +187,14 @@ export const bookingDb = {
   },
 
   // Check if time slot is available
+  // Considers both 30min and 1h bookings
+  // - 30min bookings: occupy 1 slot, allow up to 2 per slot
+  // - 1h bookings: occupy 2 consecutive slots (current + next)
   isTimeSlotAvailable: async (
     date: string,
     time: string,
     barber: string,
+    duration: "30min" | "1h" = "30min",
     excludeId?: number
   ): Promise<boolean> => {
     // Check if barber is on vacation
@@ -181,29 +219,94 @@ export const bookingDb = {
       return false;
     }
 
-    // Check if slot is already booked
-    let result;
+    const nextTime = getNextTimeSlot(time);
+    const prevTime = getPreviousTimeSlot(time);
+    
+    // Get all bookings that affect the current time slot
+    let bookingsQuery;
     if (excludeId) {
-      result = await sql`
-        SELECT COUNT(*) as count 
+      bookingsQuery = await sql`
+        SELECT time, duration
         FROM bookings 
         WHERE date = ${date} 
-        AND time = ${time}
         AND barber = ${barber}
         AND id != ${excludeId}
         AND status != 'cancelled'
+        AND (
+          time = ${time} OR
+          (time = ${prevTime} AND duration = '1h') OR
+          time = ${nextTime}
+        )
       `;
     } else {
-      result = await sql`
-        SELECT COUNT(*) as count 
+      bookingsQuery = await sql`
+        SELECT time, duration
         FROM bookings 
         WHERE date = ${date} 
-        AND time = ${time}
         AND barber = ${barber}
         AND status != 'cancelled'
+        AND (
+          time = ${time} OR
+          (time = ${prevTime} AND duration = '1h') OR
+          time = ${nextTime}
+        )
       `;
     }
-    return Number(result[0].count) === 0;
+    
+    const bookings = bookingsQuery as Array<{ time: string; duration: string }>;
+    
+    // Count how many bookings occupy the current slot
+    // This includes:
+    // - 30min bookings starting at current time
+    // - 1h bookings starting at current time
+    // - 1h bookings starting at previous time (they occupy current slot too)
+    const currentSlotOccupancy = bookings.filter(b => 
+      b.time === time || (b.time === prevTime && b.duration === '1h')
+    ).length;
+    
+    // Count how many bookings occupy the next slot (only relevant for 1h bookings)
+    const nextSlotOccupancy = bookings.filter(b => 
+      b.time === nextTime || (b.time === time && b.duration === '1h')
+    ).length;
+    
+    if (duration === "30min") {
+      // For 30min bookings: 1 person only, no double booking
+      // Slot must be completely free (0 bookings)
+      return currentSlotOccupancy === 0;
+    } else {
+      // For 1h bookings: 2 people allowed (double booking)
+      // But we need to be more careful about what's in the current slot
+      
+      // Check if there's any 30min booking in current slot
+      const has30minInCurrent = bookings.some(b => 
+        b.time === time && b.duration === '30min'
+      );
+      
+      // If there's a 30min booking, can't book 1h here
+      if (has30minInCurrent) {
+        return false;
+      }
+      
+      // Check if current slot is occupied by a 1h booking from previous slot
+      const has1hFromPrevSlot = bookings.some(b => 
+        b.time === prevTime && b.duration === '1h'
+      );
+      
+      // If current slot is occupied by a 1h booking from previous slot, can't book here
+      if (has1hFromPrevSlot) {
+        return false;
+      }
+      
+      // Count how many 1h bookings START at this slot (not including ones from previous slot)
+      const oneHourBookingsStartingHere = bookings.filter(b => 
+        b.time === time && b.duration === '1h'
+      ).length;
+      
+      // Can add a 1h booking if:
+      // 1. Less than 2 bookings starting at this slot (allows double booking)
+      // 2. Next slot is completely free (needed for the 1h duration)
+      return oneHourBookingsStartingHere < 2 && nextSlotOccupancy === 0;
+    }
   },
 
   // Get bookings by barber

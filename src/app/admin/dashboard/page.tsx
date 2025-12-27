@@ -337,6 +337,20 @@ export default function AdminDashboard() {
     }
   };
 
+  // Helper function to get next time slot (add 30 minutes)
+  const getNextTimeSlot = (time: string): string => {
+    const [hours, minutes] = time.split(':').map(Number);
+    let nextHours = hours;
+    let nextMinutes = minutes + 30;
+    
+    if (nextMinutes >= 60) {
+      nextMinutes = 0;
+      nextHours += 1;
+    }
+    
+    return `${String(nextHours).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}`;
+  };
+
   const generateTimeSlots = () => {
     const slots: string[] = [];
 
@@ -414,9 +428,117 @@ export default function AdminDashboard() {
         (b: Booking) => b.barber === barber && b.status !== "cancelled"
       );
 
-      // Filter out booked slots
-      const bookedTimes = dayBookings.map((b: Booking) => b.time);
-      const available = allSlots.filter((slot) => !bookedTimes.includes(slot));
+      // Helper to get previous time slot
+      const getPreviousTimeSlot = (time: string): string => {
+        const [hours, minutes] = time.split(':').map(Number);
+        let prevHours = hours;
+        let prevMinutes = minutes - 30;
+        
+        if (prevMinutes < 0) {
+          prevMinutes = 30;
+          prevHours -= 1;
+        }
+        
+        if (prevHours < 0) {
+          return ''; // No previous slot
+        }
+        
+        return `${String(prevHours).padStart(2, '0')}:${String(prevMinutes).padStart(2, '0')}`;
+      };
+      
+      // Count bookings per time slot
+      // We need to count:
+      // 1. Bookings that start at this slot (any duration)
+      // 2. 1h bookings that started at previous slot (they occupy current slot too)
+      const bookingsByTime: Record<string, number> = {};
+      
+      allSlots.forEach((slot) => {
+        let count = 0;
+        const prevSlot = getPreviousTimeSlot(slot);
+        
+        dayBookings.forEach((b: Booking) => {
+          // Count bookings starting at this slot
+          if (b.time === slot) {
+            count++;
+          }
+          // Count 1h bookings from previous slot (they occupy this slot too)
+          if (b.time === prevSlot && b.duration === "1h") {
+            count++;
+          }
+        });
+        
+        bookingsByTime[slot] = count;
+      });
+
+      // Filter available slots: Admin dashboard creates 1-hour bookings by default
+      // A slot is available if:
+      // 1. Current slot has less than 2 bookings (allows double bookings)
+      // 2. Next slot (current + 30min) has 0 bookings (can't overlap with existing 1-hour bookings)
+      // 3. Next slot is within valid time range (not lunch time, not after closing)
+      const available = allSlots.filter((slot) => {
+        const currentCount = bookingsByTime[slot] || 0;
+        const nextSlot = getNextTimeSlot(slot);
+        const nextCount = bookingsByTime[nextSlot] || 0;
+        
+        // Check if next slot is within valid time range
+        const [nextHours, nextMinutes] = nextSlot.split(':').map(Number);
+        const [currentHours, currentMinutes] = slot.split(':').map(Number);
+        
+        // Block slots that would end at lunch time (13:00)
+        // For example, 12:30 + 30min = 13:00 (lunch time, not allowed)
+        if (currentHours === 12 && currentMinutes === 30) {
+          return false; // Can't book 1 hour starting at 12:30 (would end at 13:00)
+        }
+        
+        // Block slots that would end at closing time
+        // For example, 18:30 + 30min = 19:00 (after closing, not allowed)
+        if (currentHours === 18 && currentMinutes === 30) {
+          return false; // Can't book 1 hour starting at 18:30 (would end at 19:00)
+        }
+        
+        const isValidNextSlot = 
+          (nextHours < 13 || (nextHours === 13 && nextMinutes === 0)) || // Morning
+          (nextHours >= 15 && (nextHours < 18 || (nextHours === 18 && nextMinutes <= 30))); // Afternoon
+        
+        // On Saturday, next slot must be in morning
+        if (isSaturday) {
+          const isNextSlotInMorning = nextHours < 13 || (nextHours === 13 && nextMinutes === 0);
+          if (!isNextSlotInMorning) {
+            return false; // Can't book if next slot would be in afternoon on Saturday
+          }
+        }
+        
+        // Check if there's any 30min booking in current slot
+        const has30minInCurrent = dayBookings.some((b: Booking) => 
+          b.time === slot && b.duration === "30min"
+        );
+        
+        // If there's a 30min booking, can't book 1h here
+        if (has30minInCurrent) {
+          return false;
+        }
+        
+        // Check if current slot is occupied by a 1h booking from previous slot
+        const prevSlot = getPreviousTimeSlot(slot);
+        const has1hFromPrevSlot = dayBookings.some((b: Booking) => 
+          b.time === prevSlot && b.duration === "1h"
+        );
+        
+        // If current slot is occupied by a 1h booking from previous slot, can't book here
+        if (has1hFromPrevSlot) {
+          return false;
+        }
+        
+        // Count how many 1h bookings START at this slot (not including ones from previous slot)
+        const oneHourBookingsStartingHere = dayBookings.filter((b: Booking) => 
+          b.time === slot && b.duration === "1h"
+        ).length;
+        
+        // Can add a 1h booking if:
+        // 1. Less than 2 bookings starting at this slot (allows double booking)
+        // 2. Next slot is completely free (needed for the 1h duration)
+        return oneHourBookingsStartingHere < 2 && nextCount === 0 && isValidNextSlot;
+      });
 
       setAvailableSlots(available);
     } catch (error) {
@@ -818,7 +940,12 @@ export default function AdminDashboard() {
                                   onClick={() => setSelectedBooking(booking)}
                                   className="text-left border-2 border-gray-200 rounded-lg p-3 md:p-4 lg:p-5 hover:border-black transition-colors min-h-[80px] md:min-h-[100px]"
                                 >
-                                  <p className="font-bold text-black text-sm md:text-base lg:text-lg mb-1 md:mb-2">{booking.time}</p>
+                                  <p className="font-bold text-black text-sm md:text-base lg:text-lg mb-1 md:mb-2">
+                                    {booking.time}
+                                    {booking.duration === "1h" && (
+                                      <span className="ml-1 text-[10px] md:text-xs bg-black text-white px-1.5 py-0.5 rounded">1h</span>
+                                    )}
+                                  </p>
                                   <p className="text-xs md:text-sm lg:text-base text-gray-700 font-medium truncate mb-1">{booking.name}</p>
                                   <p className="text-xs md:text-sm text-gray-500 truncate">✂️ {booking.barber}</p>
                                   <p className="text-xs md:text-sm text-gray-500 truncate">{booking.service}</p>
@@ -857,7 +984,19 @@ export default function AdminDashboard() {
                       >
                         <div className="flex items-start justify-between mb-3 md:mb-4">
                           <div>
-                            <p className="font-bold text-black text-lg md:text-xl lg:text-2xl">{booking.time}</p>
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-bold text-black text-lg md:text-xl lg:text-2xl">{booking.time}</p>
+                              {booking.duration === "1h" && (
+                                <span className="text-xs md:text-sm bg-black text-white px-2 py-1 rounded font-medium">
+                                  1 hora (2 pessoas)
+                                </span>
+                              )}
+                              {booking.duration === "30min" && (
+                                <span className="text-xs md:text-sm bg-gray-600 text-white px-2 py-1 rounded font-medium">
+                                  30 min
+                                </span>
+                              )}
+                            </div>
                             <p className="text-sm md:text-base lg:text-lg text-gray-600">{booking.service}</p>
                           </div>
                           <span
@@ -920,6 +1059,12 @@ export default function AdminDashboard() {
                           <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Hora</p>
                           <p className="font-medium text-black text-sm md:text-base lg:text-lg">{selectedBooking.time}</p>
                         </div>
+                      </div>
+                      <div>
+                        <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Duração</p>
+                        <p className="font-medium text-black text-sm md:text-base lg:text-lg">
+                          {selectedBooking.duration === "1h" ? "1 hora (2 pessoas)" : "30 minutos"}
+                        </p>
                       </div>
                       <div>
                         <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Cliente</p>

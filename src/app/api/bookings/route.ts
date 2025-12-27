@@ -31,11 +31,25 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// Helper function to get next time slot (add 30 minutes)
+function getNextTimeSlot(time: string): string {
+  const [hours, minutes] = time.split(':').map(Number);
+  let nextHours = hours;
+  let nextMinutes = minutes + 30;
+  
+  if (nextMinutes >= 60) {
+    nextMinutes = 0;
+    nextHours += 1;
+  }
+  
+  return `${String(nextHours).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}`;
+}
+
 // POST - Create new booking
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { service, barber, date, time, name, phone, email, observations, created_by } = body;
+    const { service, barber, date, time, duration, name, phone, email, observations, created_by } = body;
 
     // Validate required fields
     if (!service || !barber || !date || !time || !name || !phone) {
@@ -46,7 +60,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Check if time slot is available
-    const isAvailable = await bookingDb.isTimeSlotAvailable(date, time, barber);
+    // This function now handles both 30min and 1h bookings correctly
+    const isAvailable = await bookingDb.isTimeSlotAvailable(
+      date, 
+      time, 
+      barber, 
+      duration || "30min"
+    );
+    
     if (!isAvailable) {
       return NextResponse.json(
         { message: "Time slot is not available" },
@@ -54,12 +75,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Create booking
+    // Create booking with duration
+    // For 1h bookings, we create ONE booking that occupies 2 slots (current + next)
     const bookingId = await bookingDb.create({
       service,
       barber,
       date,
       time,
+      duration: duration || "30min",
       name,
       phone,
       email,
@@ -84,6 +107,7 @@ export async function POST(req: NextRequest) {
               year: "numeric",
             }),
             time,
+            duration: duration || "30min",
             observations: observations || undefined,
           }),
         });
@@ -107,6 +131,7 @@ export async function POST(req: NextRequest) {
             year: "numeric",
           }),
           time,
+          duration: duration || "30min",
           phone,
           email: email || undefined,
           observations: observations || undefined,
@@ -142,10 +167,23 @@ export async function PUT(req: NextRequest) {
 
     // If updating date/time, check availability
     if (updates.date && updates.time && updates.barber) {
+      // Get the booking's duration (either from updates or existing booking)
+      let duration: "30min" | "1h" = "30min";
+      if (updates.duration) {
+        duration = updates.duration;
+      } else {
+        // Get existing booking to check duration
+        const existingBooking = await bookingDb.getById(id);
+        if (existingBooking && existingBooking.duration) {
+          duration = existingBooking.duration as "30min" | "1h";
+        }
+      }
+      
       const isAvailable = await bookingDb.isTimeSlotAvailable(
         updates.date,
         updates.time,
         updates.barber,
+        duration,
         id
       );
       if (!isAvailable) {

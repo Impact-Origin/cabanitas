@@ -68,7 +68,7 @@ export default function HolidaysPage() {
         });
       } else {
         console.log("✅ Holidays already exist, skipping initialization");
-        setHasInitialized(true);
+      setHasInitialized(true);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -362,7 +362,7 @@ export default function HolidaysPage() {
       const dateStr = holiday.date.includes('T') ? holiday.date.split('T')[0] : holiday.date;
       const year = parseInt(dateStr.split('-')[0], 10);
       if (!isNaN(year)) {
-        years.add(year);
+      years.add(year);
       }
     });
     // If no years found, add current year and next few years as options
