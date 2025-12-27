@@ -33,7 +33,7 @@ export function AboutSection() {
 
               <div className="space-y-6 text-lg text-black/80 leading-relaxed">
                 <p>
-                  Fundada a 15 de maio de 1977 na Rua Capitão João Francisco de Sousa, a Barbearia Cabanitas é um
+                  Fundada a 15 de maio de 1967 na Rua Capitão João Francisco de Sousa, a Barbearia Cabanitas é um
                   símbolo de tradição e dedicação em Beja. O que começou com quatro barbeiros,
                   rapidamente cresceu para uma equipa de seis profissionais — tornando-se,
                   na altura, a única barbearia do país com seis barbeiros a trabalhar em simultâneo.
