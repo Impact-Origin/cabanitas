@@ -24,6 +24,7 @@ interface Booking {
   barber: string;
   date: string;
   time: string;
+  duration?: "30min" | "1h";
   name: string;
   phone: string;
   email?: string;
