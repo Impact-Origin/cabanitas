@@ -191,9 +191,9 @@ export function BookingWizard() {
       }
     }
     
-    // Afternoon slots: 15:00 - 18:30
+    // Afternoon slots: 15:30 - 18:30
     hour = 15;
-    minute = 0;
+    minute = 30;
     while (hour < 18 || (hour === 18 && minute <= 30)) {
       slots.push(`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`);
       minute += 30;
@@ -731,21 +731,21 @@ export function BookingWizard() {
                   <div className="border-t border-gray-200 pt-4">
                     <h4 className="text-sm font-medium text-gray-600 mb-3 text-center">
                       Duração da Marcação
-                    </h4>
+                        </h4>
                     <div className="grid grid-cols-2 gap-3 mb-4">
-                      <button
+                            <button
                         onClick={() => {
                           // Just update the state, useEffect will handle fetching
                           setBookingData({ ...bookingData, duration: "30min" as const, time: "" });
                         }}
                         className={`p-3 rounded-lg border transition-all text-sm font-medium cursor-pointer ${
                           bookingData.duration === "30min"
-                            ? "bg-black text-white border-black"
+                                  ? "bg-black text-white border-black"
                             : "border-gray-200 hover:bg-gray-50 text-black"
-                        }`}
-                      >
+                              }`}
+                            >
                         30 minutos
-                      </button>
+                            </button>
                       <button
                         onClick={() => {
                           // Just update the state, useEffect will handle fetching
@@ -764,10 +764,10 @@ export function BookingWizard() {
                           </span>
                         </div>
                       </button>
-                    </div>
+                      </div>
                   </div>
                 </motion.div>
-              )}
+                    )}
 
               {/* Time slots */}
               {selectedDate && bookingData.duration && (
@@ -781,7 +781,7 @@ export function BookingWizard() {
                     <div className="text-center mb-3">
                       <h4 className="text-sm font-medium text-gray-600 mb-1">
                         Horários Disponíveis
-                      </h4>
+                        </h4>
                     </div>
                     
                     {isLoadingSlots ? (
@@ -811,15 +811,15 @@ export function BookingWizard() {
                                   return hour >= 8 && hour < 13;
                                 })
                                 .map((time) => (
-                                  <button
-                                    key={time}
-                                    onClick={() => handleTimeSelect(time)}
+                            <button
+                              key={time}
+                              onClick={() => handleTimeSelect(time)}
                                     className={`p-3 rounded-lg border transition-all text-sm font-medium relative ${
-                                      bookingData.time === time
-                                        ? "bg-black text-white border-black"
+                                bookingData.time === time
+                                  ? "bg-black text-white border-black"
                                         : "border-gray-200 hover:bg-gray-50 text-black"
-                                    }`}
-                                  >
+                              }`}
+                            >
                                     <div className="flex flex-col items-center">
                                       <span>{time}</span>
                                       {bookingData.duration === "1h" && (
@@ -828,38 +828,38 @@ export function BookingWizard() {
                                         </span>
                                       )}
                                     </div>
-                                  </button>
-                                ))}
-                            </div>
-                          </div>
-                        )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                         {/* Afternoon slots */}
                         {availableSlots.filter(slot => {
                           const hour = parseInt(slot.split(':')[0]);
                           return hour >= 15;
                         }).length > 0 && (
-                          <div className="mb-4">
+                      <div className="mb-4">
                             <h5 className="text-xs font-medium text-gray-500 mb-2 text-center">
-                              Tarde (15:00 - 18:30)
+                              Tarde (15:30 - 18:30)
                             </h5>
                             <div className="grid grid-cols-3 gap-2">
                               {availableSlots
                                 .filter(slot => {
                                   const hour = parseInt(slot.split(':')[0]);
-                                  // Include slots from 15:00 to 18:30 (hour 15-18, all minutes)
+                                  // Include slots from 15:30 to 18:30 (hour 15-18, all minutes)
                                   return hour >= 15;
                                 })
                                 .map((time) => (
-                                  <button
-                                    key={time}
-                                    onClick={() => handleTimeSelect(time)}
+                            <button
+                              key={time}
+                              onClick={() => handleTimeSelect(time)}
                                     className={`p-3 rounded-lg border transition-all text-sm font-medium relative ${
-                                      bookingData.time === time
-                                        ? "bg-black text-white border-black"
+                                bookingData.time === time
+                                  ? "bg-black text-white border-black"
                                         : "border-gray-200 hover:bg-gray-50 text-black"
-                                    }`}
-                                  >
+                              }`}
+                            >
                                     <div className="flex flex-col items-center">
                                       <span>{time}</span>
                                       {bookingData.duration === "1h" && (
@@ -868,11 +868,11 @@ export function BookingWizard() {
                                         </span>
                                       )}
                                     </div>
-                                  </button>
-                                ))}
-                            </div>
-                          </div>
-                        )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                       </>
                     )}
                     
@@ -883,12 +883,12 @@ export function BookingWizard() {
                             Marcação de 1 hora ocupa 2 slots consecutivos
                           </p>
                           <p className="text-xs text-gray-400">
-                            Fechado para almoço: 13:00-15:00
+                            Fechado para almoço: 13:00-15:30
                           </p>
                         </>
                       ) : (
                         <p className="text-xs text-gray-400">
-                          Horários de meia em meia hora • Fechado para almoço: 13:00-15:00
+                          Horários de meia em meia hora • Fechado para almoço: 13:00-15:30
                         </p>
                       )}
                     </div>
@@ -974,15 +974,15 @@ export function BookingWizard() {
                 </div>
 
                 <div>
-                  <Input
-                    type="email"
+                <Input
+                  type="email"
                     placeholder="O seu e-mail (opcional)"
-                    value={bookingData.email}
-                    onChange={(e) =>
-                      setBookingData({ ...bookingData, email: e.target.value })
-                    }
-                    className="w-full p-3 border border-gray-200 rounded-md focus:border-gray-400 text-sm"
-                  />
+                  value={bookingData.email}
+                  onChange={(e) =>
+                    setBookingData({ ...bookingData, email: e.target.value })
+                  }
+                  className="w-full p-3 border border-gray-200 rounded-md focus:border-gray-400 text-sm"
+                />
                   <p className="text-xs text-gray-500 mt-1">
                     Necessário para receber confirmação e lembretes
                   </p>

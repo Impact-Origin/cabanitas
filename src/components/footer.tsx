@@ -44,7 +44,7 @@ export function Footer() {
             <div className="text-white space-y-1.5 text-base">
               <div className="font-medium">Segunda - Sexta</div>
               <div className="text-white/90">8:00 - 13:00</div>
-              <div className="text-white/90">15:00 - 19:00</div>
+              <div className="text-white/90">15:30 - 19:00</div>
               <div className="pt-2 font-medium">Sábado</div>
               <div className="text-white/90">8:00 - 13:00</div>
               <div className="pt-2 font-medium">Domingo</div>

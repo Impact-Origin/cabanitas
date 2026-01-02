@@ -367,9 +367,9 @@ export default function AdminDashboard() {
       }
     }
 
-    // Afternoon slots: 15:00 - 18:30
+    // Afternoon slots: 15:30 - 18:30
     hour = 15;
-    minute = 0;
+    minute = 30;
     while (hour < 18 || (hour === 18 && minute <= 30)) {
       slots.push(`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`);
       minute += 30;
@@ -1452,7 +1452,7 @@ export default function AdminDashboard() {
                         </div>
                       )}
                       <p className="text-xs md:text-sm lg:text-base text-gray-500 mt-3 md:mt-4">
-                        Horários: 08:30-13:00 (manhã) e 15:00-18:30 (tarde) • Slots de 30 minutos
+                        Horários: 08:30-13:00 (manhã) e 15:30-18:30 (tarde) • Slots de 30 minutos
                       </p>
                     </div>
 

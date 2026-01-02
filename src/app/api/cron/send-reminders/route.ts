@@ -45,9 +45,9 @@ export async function GET(request: Request) {
               service: booking.service,
               barber: booking.barber,
               date: new Date(booking.date).toLocaleDateString("pt-PT", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
               }),
               time: booking.time,
               duration: booking.duration || "30min",

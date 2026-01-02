@@ -599,10 +599,10 @@ export const holidayDb = {
   upsert: async (holiday: Holiday): Promise<number> => {
     // Normalize the date to ensure consistent format
     const normalizedDate = holidayDb.normalizeDate(holiday.date);
-
+    
     // First try to find existing holiday
     const existing = await holidayDb.getByDate(normalizedDate);
-
+    
     if (existing) {
       // Update existing
       await sql`
@@ -644,7 +644,7 @@ export async function initializeDatabase() {
 
     if (!tablesExist[0].exists) {
       console.log("Creating database tables...");
-
+      
       // Create bookings table
       await sql`
         CREATE TABLE bookings (
