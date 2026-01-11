@@ -471,74 +471,17 @@ export default function AdminDashboard() {
         bookingsByTime[slot] = count;
       });
 
-      // Filter available slots: Admin dashboard creates 1-hour bookings by default
-      // A slot is available if:
-      // 1. Current slot has less than 2 bookings (allows double bookings)
-      // 2. Next slot (current + 30min) has 0 bookings (can't overlap with existing 1-hour bookings)
-      // 3. Next slot is within valid time range (not lunch time, not after closing)
+      // Filter available slots: Admin dashboard creates 30-minute bookings
+      // A slot is available if it's completely free (0 bookings)
+      // 30min bookings are for 1 person only, no double booking
       const available = allSlots.filter((slot) => {
         const currentCount = bookingsByTime[slot] || 0;
-        const nextSlot = getNextTimeSlot(slot);
-        const nextCount = bookingsByTime[nextSlot] || 0;
         
-        // Check if next slot is within valid time range
-        const [nextHours, nextMinutes] = nextSlot.split(':').map(Number);
-        const [currentHours, currentMinutes] = slot.split(':').map(Number);
-        
-        // Block slots that would end at lunch time (13:00)
-        // For example, 12:30 + 30min = 13:00 (lunch time, not allowed)
-        if (currentHours === 12 && currentMinutes === 30) {
-          return false; // Can't book 1 hour starting at 12:30 (would end at 13:00)
-        }
-        
-        // Block slots that would end at closing time
-        // For example, 18:30 + 30min = 19:00 (after closing, not allowed)
-        if (currentHours === 18 && currentMinutes === 30) {
-          return false; // Can't book 1 hour starting at 18:30 (would end at 19:00)
-        }
-        
-        const isValidNextSlot = 
-          (nextHours < 13 || (nextHours === 13 && nextMinutes === 0)) || // Morning
-          (nextHours >= 15 && (nextHours < 18 || (nextHours === 18 && nextMinutes <= 30))); // Afternoon
-        
-        // On Saturday, next slot must be in morning
-        if (isSaturday) {
-          const isNextSlotInMorning = nextHours < 13 || (nextHours === 13 && nextMinutes === 0);
-          if (!isNextSlotInMorning) {
-            return false; // Can't book if next slot would be in afternoon on Saturday
-          }
-        }
-        
-        // Check if there's any 30min booking in current slot
-        const has30minInCurrent = dayBookings.some((b: Booking) => 
-          b.time === slot && b.duration === "30min"
-        );
-        
-        // If there's a 30min booking, can't book 1h here
-        if (has30minInCurrent) {
-          return false;
-        }
-        
-        // Check if current slot is occupied by a 1h booking from previous slot
-        const prevSlot = getPreviousTimeSlot(slot);
-        const has1hFromPrevSlot = dayBookings.some((b: Booking) => 
-          b.time === prevSlot && b.duration === "1h"
-        );
-        
-        // If current slot is occupied by a 1h booking from previous slot, can't book here
-        if (has1hFromPrevSlot) {
-          return false;
-        }
-        
-        // Count how many 1h bookings START at this slot (not including ones from previous slot)
-        const oneHourBookingsStartingHere = dayBookings.filter((b: Booking) => 
-          b.time === slot && b.duration === "1h"
-        ).length;
-        
-        // Can add a 1h booking if:
-        // 1. Less than 2 bookings starting at this slot (allows double booking)
-        // 2. Next slot is completely free (needed for the 1h duration)
-        return oneHourBookingsStartingHere < 2 && nextCount === 0 && isValidNextSlot;
+        // For 30-minute bookings, slot must be completely free (0 bookings)
+        // bookingsByTime already counts:
+        // 1. Bookings starting at this slot (any duration)
+        // 2. 1h bookings from previous slot (they occupy this slot too)
+        return currentCount === 0;
       });
 
       setAvailableSlots(available);
@@ -1053,7 +996,23 @@ export default function AdminDashboard() {
                         <div>
                           <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Data</p>
                           <p className="font-medium text-black text-sm md:text-base lg:text-lg">
-                            {format(parseISO(selectedBooking.date), "dd/MM/yyyy")}
+                            {selectedBooking.date ? (() => {
+                              try {
+                                // Parse YYYY-MM-DD string to Date in local timezone
+                                const dateStr = selectedBooking.date.split('T')[0]; // Handle ISO format
+                                const [year, month, day] = dateStr.split('-').map(Number);
+                                if (isNaN(year) || isNaN(month) || isNaN(day)) {
+                                  return selectedBooking.date;
+                                }
+                                const date = new Date(year, month - 1, day);
+                                if (isNaN(date.getTime())) {
+                                  return selectedBooking.date;
+                                }
+                                return format(date, "dd/MM/yyyy");
+                              } catch (error) {
+                                return selectedBooking.date;
+                              }
+                            })() : ''}
                           </p>
                         </div>
                         <div>
@@ -1510,7 +1469,7 @@ export default function AdminDashboard() {
 
                     <div>
                       <label className="block text-base md:text-lg lg:text-xl font-medium text-gray-700 mb-2 md:mb-3">
-                        Telefone <span className="text-red-500">*</span>
+                        Telefone <span className="text-gray-400 text-xs md:text-sm">(opcional)</span>
                       </label>
                       <Input
                         type="tel"
@@ -1520,7 +1479,6 @@ export default function AdminDashboard() {
                         }
                         className="text-base md:text-lg lg:text-xl p-4 md:p-5 lg:p-6 h-[52px] md:h-[60px]"
                         placeholder="+351 XXX XXX XXX"
-                        required
                       />
                     </div>
 
@@ -1614,7 +1572,23 @@ export default function AdminDashboard() {
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
         title="Eliminar Marcação"
-        description={`Tem a certeza que deseja eliminar a marcação de ${bookingToDelete?.name} no dia ${bookingToDelete ? format(parseISO(bookingToDelete.date), "dd/MM/yyyy", { locale: pt }) : ""} às ${bookingToDelete?.time}? Esta ação não pode ser desfeita.`}
+        description={`Tem a certeza que deseja eliminar a marcação de ${bookingToDelete?.name} no dia ${bookingToDelete && bookingToDelete.date ? (() => {
+          try {
+            // Parse YYYY-MM-DD string to Date in local timezone
+            const dateStr = bookingToDelete.date.split('T')[0]; // Handle ISO format
+            const [year, month, day] = dateStr.split('-').map(Number);
+            if (isNaN(year) || isNaN(month) || isNaN(day)) {
+              return bookingToDelete.date;
+            }
+            const date = new Date(year, month - 1, day);
+            if (isNaN(date.getTime())) {
+              return bookingToDelete.date;
+            }
+            return format(date, "dd/MM/yyyy", { locale: pt });
+          } catch (error) {
+            return bookingToDelete.date;
+          }
+        })() : ""} às ${bookingToDelete?.time}? Esta ação não pode ser desfeita.`}
         confirmText="Eliminar"
         cancelText="Cancelar"
         onConfirm={handleDeleteBookingConfirm}

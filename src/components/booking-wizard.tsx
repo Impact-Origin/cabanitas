@@ -40,7 +40,7 @@ export function BookingWizard() {
     barber: "",
     date: null,
     time: "",
-    duration: "1h", // Default to 1 hour
+    duration: "30min", // Default to 30 minutes
     name: "",
     phone: "",
     email: "",
@@ -1078,7 +1078,7 @@ export function BookingWizard() {
                     barber: "",
                     date: null,
                     time: "",
-                    duration: "1h",
+                    duration: "30min",
                     name: "",
                     phone: "",
                     email: "",

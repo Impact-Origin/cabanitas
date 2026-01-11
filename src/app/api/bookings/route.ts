@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     const { service, barber, date, time, duration, name, phone, email, observations, created_by } = body;
 
     // Validate required fields
-    if (!service || !barber || !date || !time || !name || !phone) {
+    if (!service || !barber || !date || !time || !name) {
       return NextResponse.json(
         { message: "Missing required fields" },
         { status: 400 }
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
       time,
       duration: duration || "30min",
       name,
-      phone,
+      phone: phone || "",
       email,
       observations,
       created_by: created_by || "client",

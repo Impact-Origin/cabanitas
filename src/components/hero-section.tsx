@@ -37,7 +37,7 @@ export function HeroSection() {
           size="lg"
           className="bg-white text-black hover:bg-white/90 text-lg px-8 py-6 rounded-none uppercase tracking-wider font-bold shadow-2xl"
         >
-          Marque a Sua Consulta
+          Marque o Seu Corte
         </Button>
       </div>
 
