@@ -407,8 +407,24 @@ export function BookingWizard() {
         // 2. Next slot is completely free (needed for the 1h duration)
         return oneHourBookingsStartingHere < 2 && nextCount === 0 && isValidNextSlot;
       });
-      
-      setAvailableSlots(available);
+
+      // Block slots when less than 30 minutes until slot time (only for today)
+      const todayStr = (() => {
+        const t = new Date();
+        return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+      })();
+      let finalSlots = available;
+      if (formattedDate === todayStr) {
+        const now = new Date();
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        finalSlots = available.filter((slot) => {
+          const [h, m] = slot.split(':').map(Number);
+          const slotMinutes = h * 60 + m;
+          return slotMinutes - currentMinutes >= 30;
+        });
+      }
+
+      setAvailableSlots(finalSlots);
     } catch (error) {
       console.error("Error fetching available slots:", error);
       setAvailableSlots([]);
@@ -1020,11 +1036,11 @@ export function BookingWizard() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ duration: 0.4 }}
-                className="text-center space-y-4 py-6"
+                className="text-center space-y-6 py-8 px-4"
               >
-              <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto">
+              <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto">
                 <svg
-                  className="w-8 h-8 text-white"
+                  className="w-10 h-10 text-white"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -1039,33 +1055,33 @@ export function BookingWizard() {
               </div>
 
               <div>
-                <h3 className="text-2xl font-semibold text-black mb-1">
+                <h3 className="text-3xl md:text-4xl font-bold text-black mb-3">
                   Marcação Confirmada!
                 </h3>
-                <p className="text-sm text-gray-600">
+                <p className="text-lg md:text-xl text-gray-600">
                   Receberá um email de confirmação em breve.
                 </p>
               </div>
 
-              <div className="bg-gray-50 p-4 rounded-lg space-y-2 text-left">
-                <p className="text-sm">
-                  <span className="font-medium">Serviço:</span>{" "}
+              <div className="bg-gray-50 p-5 md:p-6 rounded-xl space-y-3 text-left max-w-md mx-auto">
+                <p className="text-base md:text-lg">
+                  <span className="font-semibold">Serviço:</span>{" "}
                   {services.find((s) => s.id === bookingData.service)?.name}
                 </p>
-                <p className="text-sm">
-                  <span className="font-medium">Barbeiro:</span>{" "}
+                <p className="text-base md:text-lg">
+                  <span className="font-semibold">Barbeiro:</span>{" "}
                   {barbers.find((b) => b.id === bookingData.barber)?.name}
                 </p>
-                <p className="text-sm">
-                  <span className="font-medium">Data:</span>{" "}
+                <p className="text-base md:text-lg">
+                  <span className="font-semibold">Data:</span>{" "}
                   {bookingData.date?.toLocaleDateString("pt-PT", {
                     day: "numeric",
                     month: "long",
                     year: "numeric",
                   })}
                 </p>
-                <p className="text-sm">
-                  <span className="font-medium">Hora:</span>{" "}
+                <p className="text-base md:text-lg">
+                  <span className="font-semibold">Hora:</span>{" "}
                   {bookingData.time} ({bookingData.duration === "1h" ? "1 hora" : "30 minutos"})
                 </p>
               </div>

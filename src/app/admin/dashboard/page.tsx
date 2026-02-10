@@ -474,7 +474,7 @@ export default function AdminDashboard() {
       // Filter available slots: Admin dashboard creates 30-minute bookings
       // A slot is available if it's completely free (0 bookings)
       // 30min bookings are for 1 person only, no double booking
-      const available = allSlots.filter((slot) => {
+      let available = allSlots.filter((slot) => {
         const currentCount = bookingsByTime[slot] || 0;
         
         // For 30-minute bookings, slot must be completely free (0 bookings)
@@ -483,6 +483,21 @@ export default function AdminDashboard() {
         // 2. 1h bookings from previous slot (they occupy this slot too)
         return currentCount === 0;
       });
+
+      // Block slots when less than 30 minutes until slot time (only for today)
+      const todayStr = (() => {
+        const t = new Date();
+        return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+      })();
+      if (date === todayStr) {
+        const now = new Date();
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        available = available.filter((slot) => {
+          const [h, m] = slot.split(':').map(Number);
+          const slotMinutes = h * 60 + m;
+          return slotMinutes - currentMinutes >= 30;
+        });
+      }
 
       setAvailableSlots(available);
     } catch (error) {

@@ -59,6 +59,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Block booking if less than 30 minutes until slot (for today)
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    if (date === todayStr) {
+      const [slotHour, slotMin] = time.split(':').map(Number);
+      const slotMinutes = slotHour * 60 + slotMin;
+      const nowMinutes = today.getHours() * 60 + today.getMinutes();
+      if (slotMinutes - nowMinutes < 30) {
+        return NextResponse.json(
+          { message: "Não é possível marcar com menos de 30 minutos de antecedência" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Check if time slot is available
     // This function now handles both 30min and 1h bookings correctly
     const isAvailable = await bookingDb.isTimeSlotAvailable(
