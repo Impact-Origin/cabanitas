@@ -179,10 +179,10 @@ export function BookingWizard() {
   const generateTimeSlots = () => {
     const slots: string[] = [];
     
-    // Morning slots: 08:30 - 13:00
+    // Morning slots: 08:30 - 12:30 (último slot termina às 13:00, hora de fecho para almoço)
     let hour = 8;
     let minute = 30;
-    while (hour < 13 || (hour === 13 && minute === 0)) {
+    while (hour < 13) {
       slots.push(`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`);
       minute += 30;
       if (minute === 60) {
