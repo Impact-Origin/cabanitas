@@ -167,7 +167,7 @@ export function getConfirmationEmailTemplate(params: EmailTemplateParams): strin
           <p>Aguardamos a sua visita.</p>
           
           <p><strong>A Barbearia Cabanitas agradece a sua preferência.</strong></p>
-          
+          <!-- template-confirmation-v2 -->
           <div class="divider"></div>
           
           <p style="color: #999; font-size: 13px;">

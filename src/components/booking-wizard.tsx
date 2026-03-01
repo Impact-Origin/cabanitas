@@ -1032,6 +1032,7 @@ export function BookingWizard() {
             {step === "confirmation" && (
               <motion.div
                 key="confirmation"
+                data-booking-confirmation="v2"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
