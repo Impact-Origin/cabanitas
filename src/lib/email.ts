@@ -1,5 +1,10 @@
 // Brevo (formerly Sendinblue) email service
 // Documentation: https://developers.brevo.com/docs/send-a-transactional-email
+//
+// Vercel / IP authorization: Em Brevo, Security → Authorized IPs → escolher
+// "Automatic authorization" para que novos IPs (ex.: Vercel) sejam autorizados
+// automaticamente. Com "Email notifications" cada IP novo pede aprovação e
+// o Vercel usa IPs dinâmicos, pelo que os emails podem falhar.
 
 interface BrevoEmailParams {
     to: string | string[];

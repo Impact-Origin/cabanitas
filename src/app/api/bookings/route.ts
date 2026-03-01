@@ -74,10 +74,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Normalize date to YYYY-MM-DD to avoid timezone/format mismatches with DB
+    const dateOnly = typeof date === 'string' && date.includes('T') ? date.split('T')[0] : date;
+
     // Check if time slot is available
-    // This function now handles both 30min and 1h bookings correctly
     const isAvailable = await bookingDb.isTimeSlotAvailable(
-      date, 
+      dateOnly, 
       time, 
       barber, 
       duration || "30min"
@@ -95,7 +97,7 @@ export async function POST(req: NextRequest) {
     const bookingId = await bookingDb.create({
       service,
       barber,
-      date,
+      date: dateOnly,
       time,
       duration: duration || "30min",
       name,

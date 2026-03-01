@@ -164,7 +164,9 @@ export function getConfirmationEmailTemplate(params: EmailTemplateParams): strin
             ` : ''}
           </div>
           
-          <p>Aguardamos a sua visita. Receberá um lembrete 1 dia antes da sua marcação.</p>
+          <p>Aguardamos a sua visita.</p>
+          
+          <p><strong>A Barbearia Cabanitas agradece a sua preferência.</strong></p>
           
           <div class="divider"></div>
           

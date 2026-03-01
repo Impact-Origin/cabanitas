@@ -1061,6 +1061,12 @@ export function BookingWizard() {
                 <p className="text-lg md:text-xl text-gray-600">
                   Receberá um email de confirmação em breve.
                 </p>
+                <p className="text-base md:text-lg text-gray-600 mt-2">
+                  Em caso de algum problema, contacte:{" "}
+                  <a href="tel:+351963242206" className="font-semibold text-black underline hover:no-underline">
+                    +351 963 242 206
+                  </a>
+                </p>
               </div>
 
               <div className="bg-gray-50 p-5 md:p-6 rounded-xl space-y-3 text-left max-w-md mx-auto">
