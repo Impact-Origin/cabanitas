@@ -20,6 +20,7 @@ const BUSINESS_INFO = {
   postalCode: '7800-451 Beja',
   phone: '+351 963 242 206',
 };
+const GOOGLE_REVIEW_LINK = "https://g.page/r/CVvd45NnzfiQEAE/review";
 
 // Common email styles
 const emailStyles = `
@@ -167,6 +168,13 @@ export function getConfirmationEmailTemplate(params: EmailTemplateParams): strin
           <p>Aguardamos a sua visita.</p>
           
           <p><strong>A Barbearia Cabanitas agradece a sua preferência.</strong></p>
+          
+          <p>
+            Se gostou do serviço, deixe-nos uma avaliação no Google:
+            <a href="${GOOGLE_REVIEW_LINK}" style="color: #000; font-weight: 600; margin-left: 6px;">
+              Deixar review
+            </a>
+          </p>
           <!-- template-confirmation-v2 -->
           <div class="divider"></div>
           
@@ -262,7 +270,7 @@ export function getReminderEmailTemplate(params: EmailTemplateParams): string {
 
 // Review Request Email
 export function getReviewEmailTemplate(params: EmailTemplateParams): string {
-  const googleReviewLink = process.env.GOOGLE_REVIEW_LINK || '#';
+  const googleReviewLink = process.env.GOOGLE_REVIEW_LINK || GOOGLE_REVIEW_LINK;
 
   return `
     <!DOCTYPE html>
