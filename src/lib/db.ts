@@ -308,6 +308,7 @@ export const bookingDb = {
           email,
           phone,
           barber,
+          MIN(date) as first_booking_date,
           MAX(date) as last_booking_date,
           COUNT(*) as total_bookings
         FROM bookings
@@ -323,6 +324,7 @@ export const bookingDb = {
           email,
           phone,
           barber,
+          MIN(date) as first_booking_date,
           MAX(date) as last_booking_date,
           COUNT(*) as total_bookings
         FROM bookings
