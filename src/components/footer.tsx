@@ -86,6 +86,17 @@ export function Footer() {
           <p className="text-white/60 text-xs md:text-sm text-center md:text-left">
             © {new Date().getFullYear()} Barbearia Cabanitas. Todos os direitos reservados.
           </p>
+          <p className="text-white/60 text-xs md:text-sm text-center md:text-right">
+            Website desenvolvido por{" "}
+            <a
+              href="https://impact-origin.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-white/80 hover:text-white font-medium underline-offset-2 hover:underline transition-colors"
+            >
+              Impact
+            </a>
+          </p>
         </div>
       </div>
     </footer>
