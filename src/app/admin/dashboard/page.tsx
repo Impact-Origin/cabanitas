@@ -44,6 +44,10 @@ const translateStatus = (status: string): string => {
   return translations[status] || status;
 };
 
+// Verifica se a marcação tem observações do cliente
+const hasObservations = (booking: Booking): boolean =>
+  Boolean(booking.observations && booking.observations.trim().length > 0);
+
 const translateCreatedBy = (createdBy: string): string => {
   const translations: { [key: string]: string } = {
     'client': 'Cliente',
@@ -687,13 +691,16 @@ export default function AdminDashboard() {
             >
               <div className="text-sm md:text-base lg:text-lg font-medium">{format(day, "d")}</div>
               {dayBookings.length > 0 && !isDisabled && (
-                <div className="mt-1 md:mt-2">
+                <div className="mt-1 md:mt-2 flex items-center justify-center gap-1">
                   <div
                     className={`text-xs md:text-sm lg:text-base font-semibold ${isSelected ? "text-white" : "text-black"
                       }`}
                   >
                     {dayBookings.length}
                   </div>
+                  {dayBookings.some(hasObservations) && (
+                    <span className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-full bg-red-500" />
+                  )}
                 </div>
               )}
             </button>
@@ -897,12 +904,18 @@ export default function AdminDashboard() {
                                 <button
                                   key={booking.id}
                                   onClick={() => setSelectedBooking(booking)}
-                                  className="text-left border-2 border-gray-200 rounded-lg p-3 md:p-4 lg:p-5 hover:border-black transition-colors min-h-[80px] md:min-h-[100px]"
+                                  className={`text-left border-2 rounded-lg p-3 md:p-4 lg:p-5 transition-colors min-h-[80px] md:min-h-[100px] ${hasObservations(booking)
+                                    ? "border-red-500 bg-red-50/50 hover:border-red-600"
+                                    : "border-gray-200 hover:border-black"
+                                    }`}
                                 >
                                   <p className="font-bold text-black text-sm md:text-base lg:text-lg mb-1 md:mb-2">
                                     {booking.time}
                                     {booking.duration === "1h" && (
                                       <span className="ml-1 text-[10px] md:text-xs bg-black text-white px-1.5 py-0.5 rounded">1h</span>
+                                    )}
+                                    {hasObservations(booking) && (
+                                      <span className="ml-1 text-[10px] md:text-xs bg-red-600 text-white px-1.5 py-0.5 rounded">⚠️ Obs.</span>
                                     )}
                                   </p>
                                   <p className="text-xs md:text-sm lg:text-base text-gray-700 font-medium truncate mb-1">{booking.name}</p>
@@ -938,7 +951,10 @@ export default function AdminDashboard() {
                     .map((booking) => (
                       <div
                         key={booking.id}
-                        className="border-2 border-gray-200 rounded-lg p-4 md:p-5 lg:p-6 hover:border-black transition-colors cursor-pointer min-h-[120px] md:min-h-[140px]"
+                        className={`border-2 rounded-lg p-4 md:p-5 lg:p-6 transition-colors cursor-pointer min-h-[120px] md:min-h-[140px] ${hasObservations(booking)
+                          ? "border-red-500 bg-red-50/50 hover:border-red-600"
+                          : "border-gray-200 hover:border-black"
+                          }`}
                         onClick={() => setSelectedBooking(booking)}
                       >
                         <div className="flex items-start justify-between mb-3 md:mb-4">
@@ -958,18 +974,25 @@ export default function AdminDashboard() {
                             </div>
                             <p className="text-sm md:text-base lg:text-lg text-gray-600">{booking.service}</p>
                           </div>
-                          <span
-                            className={`text-xs md:text-sm lg:text-base px-2 md:px-3 lg:px-4 py-1 md:py-1.5 rounded-full font-medium ${booking.status === "confirmed"
-                              ? "bg-green-100 text-green-700"
-                              : booking.status === "completed"
-                                ? "bg-blue-100 text-blue-700"
-                                : booking.status === "cancelled"
-                                  ? "bg-red-100 text-red-700"
-                                  : "bg-gray-100 text-gray-700"
-                              }`}
-                          >
-                            {translateStatus(booking.status)}
-                          </span>
+                          <div className="flex flex-col items-end gap-1 md:gap-2">
+                            <span
+                              className={`text-xs md:text-sm lg:text-base px-2 md:px-3 lg:px-4 py-1 md:py-1.5 rounded-full font-medium ${booking.status === "confirmed"
+                                ? "bg-green-100 text-green-700"
+                                : booking.status === "completed"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : booking.status === "cancelled"
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-gray-100 text-gray-700"
+                                }`}
+                            >
+                              {translateStatus(booking.status)}
+                            </span>
+                            {hasObservations(booking) && (
+                              <span className="text-xs md:text-sm px-2 md:px-3 py-1 rounded-full font-semibold bg-red-600 text-white whitespace-nowrap">
+                                ⚠️ Observação
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="space-y-1 md:space-y-2">
                           <p className="text-sm md:text-base lg:text-lg font-medium text-black">👤 {booking.name}</p>
@@ -977,6 +1000,14 @@ export default function AdminDashboard() {
                           <p className="text-xs md:text-sm lg:text-base text-gray-500">📞 {booking.phone}</p>
                           {booking.email && (
                             <p className="text-xs md:text-sm lg:text-base text-gray-500">📧 {booking.email}</p>
+                          )}
+                          {hasObservations(booking) && (
+                            <div className="mt-2 md:mt-3 border-l-4 border-red-500 bg-red-50 rounded-r p-2 md:p-3">
+                              <p className="text-xs md:text-sm font-semibold text-red-700 mb-0.5">Observação do cliente</p>
+                              <p className="text-xs md:text-sm lg:text-base text-red-900 whitespace-pre-wrap break-words">
+                                {booking.observations}
+                              </p>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1056,9 +1087,9 @@ export default function AdminDashboard() {
                         </div>
                       )}
                       {selectedBooking.observations && (
-                        <div>
-                          <p className="text-xs md:text-sm lg:text-base text-gray-500 mb-1">Observações</p>
-                          <p className="font-medium text-black text-sm md:text-base lg:text-lg">{selectedBooking.observations}</p>
+                        <div className="border-l-4 border-red-500 bg-red-50 rounded-r p-3 md:p-4">
+                          <p className="text-xs md:text-sm lg:text-base text-red-700 font-semibold mb-1">⚠️ Observações</p>
+                          <p className="font-medium text-red-900 text-sm md:text-base lg:text-lg whitespace-pre-wrap break-words">{selectedBooking.observations}</p>
                         </div>
                       )}
                       <div>
