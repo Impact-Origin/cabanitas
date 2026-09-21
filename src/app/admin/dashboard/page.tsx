@@ -68,6 +68,7 @@ export default function AdminDashboard() {
   const [bookingStep, setBookingStep] = useState(1);
   const [isCreatingBooking, setIsCreatingBooking] = useState(false);
   const [selectedBarber, setSelectedBarber] = useState<string>("all");
+  const [onlyWithObservations, setOnlyWithObservations] = useState(false);
   const [blockedDates, setBlockedDates] = useState<Set<string>>(new Set());
   const [holidays, setHolidays] = useState<Set<string>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -646,9 +647,19 @@ export default function AdminDashboard() {
       dayBookings = dayBookings.filter((b) => b.barber === selectedBarber);
     }
 
+    // Mostrar apenas marcações com observações do cliente
+    if (onlyWithObservations) {
+      dayBookings = dayBookings.filter(hasObservations);
+    }
+
     console.log(`📅 Bookings for ${dateStr} (barber: ${selectedBarber}):`, dayBookings.length);
     return dayBookings;
   };
+
+  // Marcações com observações no período carregado (mês ou semana), já com o filtro de barbeiro
+  const observationsCount = bookings.filter(
+    (b) => (selectedBarber === "all" || b.barber === selectedBarber) && hasObservations(b)
+  ).length;
 
   const renderCalendar = () => {
     const days = eachDayOfInterval({
@@ -755,6 +766,28 @@ export default function AdminDashboard() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Observations Filter */}
+              <div className="flex-1 sm:flex-initial">
+                <label className="block text-xs md:text-sm font-medium text-gray-700 mb-1.5 md:mb-2 opacity-0 pointer-events-none">
+                  Observações
+                </label>
+                <Button
+                  onClick={() => setOnlyWithObservations((v) => !v)}
+                  disabled={observationsCount === 0 && !onlyWithObservations}
+                  aria-pressed={onlyWithObservations}
+                  variant="outline"
+                  size="sm"
+                  className={`w-full sm:w-auto text-sm md:text-base px-4 md:px-5 py-2.5 md:py-3 font-semibold h-[42px] md:h-[46px] border-2 transition-all disabled:opacity-100 ${onlyWithObservations
+                    ? "bg-red-600 text-white border-red-600 hover:bg-red-700 hover:text-white shadow-sm"
+                    : observationsCount === 0
+                      ? "bg-white text-gray-400 border-gray-200 cursor-not-allowed"
+                      : "bg-white text-red-700 border-red-300 hover:bg-red-50 hover:text-red-800"
+                    }`}
+                >
+                  ⚠️ Só com observações ({observationsCount})
+                </Button>
               </div>
 
               {/* New Booking Button */}
@@ -905,7 +938,7 @@ export default function AdminDashboard() {
                                   key={booking.id}
                                   onClick={() => setSelectedBooking(booking)}
                                   className={`text-left border-2 rounded-lg p-3 md:p-4 lg:p-5 transition-colors min-h-[80px] md:min-h-[100px] ${hasObservations(booking)
-                                    ? "border-red-500 bg-red-50/50 hover:border-red-600"
+                                    ? "border-red-600 border-l-8 bg-red-50 ring-1 ring-red-200 shadow-sm hover:bg-red-100"
                                     : "border-gray-200 hover:border-black"
                                     }`}
                                 >
@@ -915,12 +948,19 @@ export default function AdminDashboard() {
                                       <span className="ml-1 text-[10px] md:text-xs bg-black text-white px-1.5 py-0.5 rounded">1h</span>
                                     )}
                                     {hasObservations(booking) && (
-                                      <span className="ml-1 text-[10px] md:text-xs bg-red-600 text-white px-1.5 py-0.5 rounded">⚠️ Obs.</span>
+                                      <span className="ml-1 text-xs md:text-sm bg-red-600 text-white font-bold px-2 py-0.5 rounded">⚠️ Obs.</span>
                                     )}
                                   </p>
                                   <p className="text-xs md:text-sm lg:text-base text-gray-700 font-medium truncate mb-1">{booking.name}</p>
                                   <p className="text-xs md:text-sm text-gray-500 truncate">✂️ {booking.barber}</p>
                                   <p className="text-xs md:text-sm text-gray-500 truncate">{booking.service}</p>
+                                  {hasObservations(booking) && (
+                                    <div className="mt-1.5 border-l-4 border-red-600 bg-red-100/70 rounded-r px-2 py-1">
+                                      <p className="text-[11px] md:text-xs text-red-900 font-medium line-clamp-2 break-words">
+                                        {booking.observations}
+                                      </p>
+                                    </div>
+                                  )}
                                 </button>
                               ))}
                           </div>
@@ -952,14 +992,14 @@ export default function AdminDashboard() {
                       <div
                         key={booking.id}
                         className={`border-2 rounded-lg p-4 md:p-5 lg:p-6 transition-colors cursor-pointer min-h-[120px] md:min-h-[140px] ${hasObservations(booking)
-                          ? "border-red-500 bg-red-50/50 hover:border-red-600"
+                          ? "border-red-600 border-l-8 bg-red-50 ring-1 ring-red-200 shadow-sm hover:bg-red-100"
                           : "border-gray-200 hover:border-black"
                           }`}
                         onClick={() => setSelectedBooking(booking)}
                       >
                         <div className="flex items-start justify-between mb-3 md:mb-4">
                           <div>
-                            <div className="flex items-center gap-2 mb-1">
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
                               <p className="font-bold text-black text-lg md:text-xl lg:text-2xl">{booking.time}</p>
                               {booking.duration === "1h" && (
                                 <span className="text-xs md:text-sm bg-black text-white px-2 py-1 rounded font-medium">
@@ -969,6 +1009,11 @@ export default function AdminDashboard() {
                               {booking.duration === "30min" && (
                                 <span className="text-xs md:text-sm bg-gray-600 text-white px-2 py-1 rounded font-medium">
                                   30 min
+                                </span>
+                              )}
+                              {hasObservations(booking) && (
+                                <span className="text-xs md:text-sm px-2 md:px-3 py-1 rounded-full font-bold bg-red-600 text-white whitespace-nowrap shadow-sm">
+                                  ⚠️ Observação
                                 </span>
                               )}
                             </div>
@@ -987,11 +1032,6 @@ export default function AdminDashboard() {
                             >
                               {translateStatus(booking.status)}
                             </span>
-                            {hasObservations(booking) && (
-                              <span className="text-xs md:text-sm px-2 md:px-3 py-1 rounded-full font-semibold bg-red-600 text-white whitespace-nowrap">
-                                ⚠️ Observação
-                              </span>
-                            )}
                           </div>
                         </div>
                         <div className="space-y-1 md:space-y-2">
@@ -1086,8 +1126,8 @@ export default function AdminDashboard() {
                           <p className="font-medium text-black text-sm md:text-base lg:text-lg">{selectedBooking.email}</p>
                         </div>
                       )}
-                      {selectedBooking.observations && (
-                        <div className="border-l-4 border-red-500 bg-red-50 rounded-r p-3 md:p-4">
+                      {hasObservations(selectedBooking) && (
+                        <div className="border-l-8 border-red-600 bg-red-50 rounded-r p-3 md:p-4">
                           <p className="text-xs md:text-sm lg:text-base text-red-700 font-semibold mb-1">⚠️ Observações</p>
                           <p className="font-medium text-red-900 text-sm md:text-base lg:text-lg whitespace-pre-wrap break-words">{selectedBooking.observations}</p>
                         </div>
