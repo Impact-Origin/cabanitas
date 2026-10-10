@@ -39,10 +39,19 @@ export function BookingWizard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Resultado da deteção de marcação já existente nestes contactos
   const [existingBooking, setExistingBooking] = useState<{
-    emailSent: boolean;
+    emailSent?: boolean;
     maskedEmail?: string;
     reason?: string;
     count: number;
+    // Várias marcações nos mesmos contactos: a pessoa escolhe qual
+    needsChoice?: boolean;
+    choices?: Array<{
+      id: number;
+      date: string;
+      time: string;
+      service: string;
+      duration: string;
+    }>;
   } | null>(null);
   const [bookingData, setBookingData] = useState<BookingData>({
     service: "",
@@ -106,6 +115,7 @@ export function BookingWizard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          name: bookingData.name,
           phone: bookingData.phone,
           email: bookingData.email || null,
         }),
@@ -119,6 +129,8 @@ export function BookingWizard() {
             maskedEmail: lookupData.maskedEmail,
             reason: lookupData.reason,
             count: lookupData.count || 1,
+            needsChoice: lookupData.needsChoice,
+            choices: lookupData.choices,
           });
           setStep("existing");
           return;
@@ -132,6 +144,44 @@ export function BookingWizard() {
     }
 
     await createBooking();
+  };
+
+  // A pessoa escolheu qual das marcações quer alterar. O id não dá acesso a
+  // nada: o servidor revalida que pertence a estes contactos e envia o link
+  // para o email da marcação.
+  const handleChooseExisting = async (bookingId: number) => {
+    setIsSubmitting(true);
+    try {
+      const response = await fetch("/api/bookings/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: bookingData.name,
+          phone: bookingData.phone,
+          email: bookingData.email || null,
+          bookingId,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast.error(data.message || "Não foi possível enviar o link.");
+        return;
+      }
+
+      setExistingBooking({
+        emailSent: data.emailSent,
+        maskedEmail: data.maskedEmail,
+        reason: data.reason,
+        count: data.count || 1,
+      });
+    } catch (error) {
+      console.error("Error requesting manage link:", error);
+      toast.error("Não foi possível enviar o link. Tente novamente.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const createBooking = async () => {
@@ -435,39 +485,87 @@ export function BookingWizard() {
                 transition={{ duration: 0.3 }}
                 className="p-6 space-y-5"
               >
-                <p className="text-sm text-gray-600">
-                  {existingBooking && existingBooking.count > 1
-                    ? "Encontrámos marcações futuras associadas a estes contactos."
-                    : "Encontrámos uma marcação futura associada a estes contactos."}
-                </p>
+                {existingBooking?.needsChoice ? (
+                  <>
+                    <div className="space-y-1">
+                      <p className="text-sm text-gray-600">
+                        Encontrámos {existingBooking.count} marcações nestes
+                        contactos.
+                      </p>
+                      <p className="text-sm font-medium text-black">
+                        Qual quer alterar?
+                      </p>
+                    </div>
 
-                {existingBooking?.emailSent ? (
-                  <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                    <p className="text-sm text-black font-medium">
-                      Enviámos o link para {existingBooking.maskedEmail}
+                    <div className="space-y-2">
+                      {existingBooking.choices?.map((choice) => (
+                        <button
+                          key={choice.id}
+                          type="button"
+                          onClick={() => handleChooseExisting(choice.id)}
+                          disabled={isSubmitting}
+                          className="w-full text-left p-4 rounded-lg border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-all disabled:opacity-50"
+                        >
+                          <div className="text-sm font-medium text-black">
+                            {new Date(
+                              `${choice.date}T12:00:00`
+                            ).toLocaleDateString("pt-PT", {
+                              weekday: "long",
+                              day: "numeric",
+                              month: "long",
+                            })}{" "}
+                            · {choice.time}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            {choice.service}
+                            {choice.duration === "1h" ? " · 1 hora" : ""}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+
+                    <p className="text-xs text-gray-400">
+                      Enviamos o link para o email da marcação que escolher. Por
+                      segurança, não mostramos aqui a quem pertence cada uma.
                     </p>
-                    <p className="text-xs text-gray-500">
-                      Abra esse email para mudar o dia ou a hora da marcação que já
-                      tem. Por segurança, não mostramos aqui os detalhes da marcação.
-                    </p>
-                  </div>
+                  </>
                 ) : (
-                  <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                    <p className="text-sm text-black font-medium">
-                      Para alterar essa marcação, ligue-nos
+                  <>
+                    <p className="text-sm text-gray-600">
+                      Encontrámos uma marcação futura associada a estes
+                      contactos.
                     </p>
-                    <a
-                      href="tel:+351963242206"
-                      className="inline-block text-sm text-black font-semibold underline"
-                    >
-                      +351 963 242 206
-                    </a>
-                    <p className="text-xs text-gray-500">
-                      {existingBooking?.reason === "no-email"
-                        ? "A marcação que já tem não ficou com email associado, por isso não podemos enviar o link."
-                        : "Não foi possível enviar o email com o link neste momento."}
-                    </p>
-                  </div>
+
+                    {existingBooking?.emailSent ? (
+                      <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                        <p className="text-sm text-black font-medium">
+                          Enviámos o link para {existingBooking.maskedEmail}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Abra esse email para mudar o dia ou a hora da marcação
+                          que já tem. Por segurança, não mostramos aqui os
+                          detalhes da marcação.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                        <p className="text-sm text-black font-medium">
+                          Para alterar essa marcação, ligue-nos
+                        </p>
+                        <a
+                          href="tel:+351963242206"
+                          className="inline-block text-sm text-black font-semibold underline"
+                        >
+                          +351 963 242 206
+                        </a>
+                        <p className="text-xs text-gray-500">
+                          {existingBooking?.reason === "no-email"
+                            ? "A marcação que já tem não ficou com email associado, por isso não podemos enviar o link."
+                            : "Não foi possível enviar o email com o link neste momento."}
+                        </p>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 <div className="space-y-3 pt-1">
