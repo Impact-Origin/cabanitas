@@ -20,7 +20,8 @@ CREATE TABLE bookings (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_by VARCHAR(50) DEFAULT 'client',
   reminder_sent BOOLEAN DEFAULT FALSE,
-  review_sent BOOLEAN DEFAULT FALSE
+  review_sent BOOLEAN DEFAULT FALSE,
+  manage_token VARCHAR(64)
 );
 
 -- Create admin_users table
@@ -55,6 +56,7 @@ CREATE INDEX idx_bookings_date ON bookings(date);
 CREATE INDEX idx_bookings_status ON bookings(status);
 CREATE INDEX idx_bookings_date_time ON bookings(date, time);
 CREATE INDEX idx_bookings_barber ON bookings(barber);
+CREATE UNIQUE INDEX idx_bookings_manage_token ON bookings(manage_token);
 CREATE INDEX idx_vacations_barber ON vacations(barber);
 CREATE INDEX idx_vacations_dates ON vacations(start_date, end_date);
 CREATE INDEX idx_holidays_date ON holidays(date);
@@ -69,5 +71,6 @@ COMMENT ON TABLE vacations IS 'Stores barber vacation periods';
 COMMENT ON TABLE holidays IS 'Stores holidays and whether barbershop works on them';
 COMMENT ON COLUMN bookings.reminder_sent IS 'TRUE if 30-minute reminder email was sent';
 COMMENT ON COLUMN bookings.review_sent IS 'TRUE if review request email was sent';
+COMMENT ON COLUMN bookings.manage_token IS 'Secret token so the client can reschedule/cancel from the email link';
 COMMENT ON COLUMN vacations.notification_sent IS 'TRUE if clients were notified about vacation';
 

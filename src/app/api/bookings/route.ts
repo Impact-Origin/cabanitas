@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { bookingDb } from "@/lib/db";
 import { sendEmail } from "@/lib/email";
 import { getConfirmationEmailTemplate, getAdminNotificationTemplate } from "@/lib/email-templates";
+import { getManageUrl } from "@/lib/booking-manage";
 
 // GET - Get all bookings or by date
+//
+// O widget de marcação chama esta rota do browser para calcular os horários
+// livres, pelo que ela é pública. Sem sessão de admin devolve apenas os campos
+// necessários para esse cálculo — nome, telefone, email e observações dos
+// clientes não saem daqui para quem não está autenticado.
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -19,6 +27,20 @@ export async function GET(req: NextRequest) {
       bookings = await bookingDb.getByDateRange(startDate, endDate);
     } else {
       bookings = await bookingDb.getAll();
+    }
+
+    const session = await getServerSession(authOptions);
+
+    if (!session) {
+      const availabilityOnly = bookings.map((b) => ({
+        id: b.id,
+        barber: b.barber,
+        date: b.date,
+        time: b.time,
+        duration: b.duration || "30min",
+        status: b.status,
+      }));
+      return NextResponse.json({ bookings: availabilityOnly }, { status: 200 });
     }
 
     return NextResponse.json({ bookings }, { status: 200 });
@@ -94,7 +116,7 @@ export async function POST(req: NextRequest) {
 
     // Create booking with duration
     // For 1h bookings, we create ONE booking that occupies 2 slots (current + next)
-    const bookingId = await bookingDb.create({
+    const { id: bookingId, manageToken } = await bookingDb.create({
       service,
       barber,
       date: dateOnly,
@@ -126,6 +148,7 @@ export async function POST(req: NextRequest) {
             time,
             duration: duration || "30min",
             observations: observations || undefined,
+            manageUrl: getManageUrl(manageToken),
           }),
         });
       } catch (emailError) {
@@ -172,9 +195,15 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PUT - Update booking
+// PUT - Update booking (apenas admin autenticado)
+// O cliente altera a sua marcação por /api/bookings/manage, autenticado pelo token.
 export async function PUT(req: NextRequest) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ message: "Não autorizado" }, { status: 401 });
+    }
+
     const body = await req.json();
     const { id, ...updates } = body;
 
@@ -223,9 +252,14 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-// DELETE - Delete booking
+// DELETE - Delete booking (apenas admin autenticado)
 export async function DELETE(req: NextRequest) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ message: "Não autorizado" }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 

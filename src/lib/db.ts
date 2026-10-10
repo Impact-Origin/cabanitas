@@ -1,4 +1,5 @@
 import { neon } from "@neondatabase/serverless";
+import { generateManageToken } from "./booking-manage";
 
 // Initialize Neon connection
 const sql = neon(process.env.DATABASE_URL!);
@@ -20,6 +21,7 @@ export interface Booking {
   created_by?: "client" | "admin";
   reminder_sent?: boolean;
   review_sent?: boolean;
+  manage_token?: string | null;
 }
 
 export interface AdminUser {
@@ -81,9 +83,13 @@ function getPreviousTimeSlot(time: string): string {
 // Database functions
 export const bookingDb = {
   // Create booking
-  create: async (booking: Booking): Promise<number> => {
+  create: async (booking: Booking): Promise<{ id: number; manageToken: string }> => {
+    // Cada marcação nasce com um token secreto, que é o que autentica o cliente
+    // quando ele clica em "Remarcar ou cancelar" no email.
+    const manageToken = booking.manage_token || generateManageToken();
+
     const result = await sql`
-      INSERT INTO bookings (service, barber, date, time, duration, name, phone, email, observations, created_by, status)
+      INSERT INTO bookings (service, barber, date, time, duration, name, phone, email, observations, created_by, status, manage_token)
       VALUES (
         ${booking.service},
         ${booking.barber},
@@ -95,11 +101,12 @@ export const bookingDb = {
         ${booking.email || null},
         ${booking.observations || null},
         ${booking.created_by || "client"},
-        ${booking.status || "confirmed"}
+        ${booking.status || "confirmed"},
+        ${manageToken}
       )
       RETURNING id
     `;
-    return result[0].id;
+    return { id: result[0].id, manageToken };
   },
 
   // Get all bookings
@@ -138,6 +145,49 @@ export const bookingDb = {
       WHERE id = ${id}
     `;
     return result[0] as Booking | undefined;
+  },
+
+  // Get booking by manage token (o link do email)
+  getByToken: async (token: string): Promise<Booking | undefined> => {
+    const result = await sql`
+      SELECT * FROM bookings
+      WHERE manage_token = ${token}
+    `;
+    return result[0] as Booking | undefined;
+  },
+
+  // Marcações futuras de um cliente, por email ou telefone.
+  // Usado pelo widget para detetar que a pessoa já tem marcação e evitar duplicados.
+  // Nunca devolve isto ao browser sem o cliente estar autenticado pelo token —
+  // ver /api/bookings/lookup, que só envia o link por email.
+  getUpcomingByContact: async (
+    contact: { email?: string | null; phone?: string | null }
+  ): Promise<Booking[]> => {
+    const email = contact.email?.trim().toLowerCase() || null;
+
+    // Comparar apenas os últimos 9 dígitos, para que "+351 963 242 206",
+    // "963242206" e "963 242 206" encontrem a mesma marcação.
+    const phoneDigits = contact.phone
+      ? contact.phone.replace(/[^0-9]/g, "").slice(-9)
+      : null;
+
+    if (!email && !phoneDigits) return [];
+
+    const result = await sql`
+      SELECT * FROM bookings
+      WHERE status != 'cancelled'
+      AND date >= CURRENT_DATE
+      AND (
+        (${email}::text IS NOT NULL AND lower(email) = ${email})
+        OR (
+          ${phoneDigits}::text IS NOT NULL
+          AND length(${phoneDigits}) = 9
+          AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 9) = ${phoneDigits}
+        )
+      )
+      ORDER BY date, time
+    `;
+    return result as Booking[];
   },
 
   // Update booking

@@ -1,6 +1,8 @@
 // Email Templates for Barbearia Cabanitas
 // Professional HTML templates with clean styling (no images or emojis)
 
+import { MANAGE_CUTOFF_HOURS, getSiteUrl } from "./booking-manage";
+
 interface EmailTemplateParams {
   name: string;
   service?: string;
@@ -12,6 +14,9 @@ interface EmailTemplateParams {
   bookingId?: number;
   phone?: string;
   email?: string;
+  manageUrl?: string;
+  previousDate?: string;
+  previousTime?: string;
 }
 
 const BUSINESS_INFO = {
@@ -113,6 +118,33 @@ const emailStyles = `
   }
 `;
 
+// Bloco "Remarcar ou cancelar" usado na confirmação e no lembrete.
+// Sem manageUrl (marcações antigas, anteriores à migração) cai no telefone,
+// para o email nunca ficar sem alternativa.
+function getManageBlock(manageUrl?: string, intro?: string): string {
+  if (!manageUrl) {
+    return `
+          <p style="color: #999; font-size: 13px;">
+            Se necessitar alterar ou cancelar a sua marcação, por favor contacte-nos
+            através do telefone ${BUSINESS_INFO.phone}.
+          </p>`;
+  }
+
+  return `
+          <p style="font-size: 15px; margin-bottom: 4px;">
+            ${intro || 'Precisa de mudar o dia ou a hora?'}
+          </p>
+          <p style="text-align: center; margin: 10px 0 20px;">
+            <a href="${manageUrl}" class="cta-button" style="color: #ffffff;">
+              Remarcar ou cancelar
+            </a>
+          </p>
+          <p style="color: #999; font-size: 13px;">
+            O link é pessoal, não o partilhe. Alterações até ${MANAGE_CUTOFF_HOURS} horas antes
+            da marcação; mais perto da hora, ligue-nos para ${BUSINESS_INFO.phone}.
+          </p>`;
+}
+
 // Booking Confirmation Email
 export function getConfirmationEmailTemplate(params: EmailTemplateParams): string {
   return `
@@ -178,9 +210,7 @@ export function getConfirmationEmailTemplate(params: EmailTemplateParams): strin
           <!-- template-confirmation-v2 -->
           <div class="divider"></div>
           
-          <p style="color: #999; font-size: 13px;">
-            Se necessitar alterar ou cancelar a sua marcação, por favor contacte-nos através do telefone ${BUSINESS_INFO.phone}.
-          </p>
+${getManageBlock(params.manageUrl)}
         </div>
         
         <div class="footer">
@@ -249,9 +279,7 @@ export function getReminderEmailTemplate(params: EmailTemplateParams): string {
           
           <div class="divider"></div>
           
-          <p style="color: #999; font-size: 13px;">
-            Em caso de imprevisto, agradecemos que nos contacte com antecedência através do telefone ${BUSINESS_INFO.phone}.
-          </p>
+${getManageBlock(params.manageUrl, 'Surgiu um imprevisto? Pode remarcar aqui, sem precisar de ligar.')}
         </div>
         
         <div class="footer">
@@ -467,4 +495,186 @@ export function getVacationEmailTemplate(params: { name: string; barber: string;
     </body>
     </html>
   `;
+}
+
+// ---------------------------------------------------------------------------
+// Emails de remarcação / cancelamento pelo próprio cliente
+// ---------------------------------------------------------------------------
+
+// Esqueleto comum. Os templates acima repetem este HTML cada um por si; nos
+// novos usa-se este helper para não acrescentar mais quatro cópias do mesmo.
+function wrapEmail(title: string, content: string): string {
+  return `
+    <!DOCTYPE html>
+    <html lang="pt">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${title}</title>
+      <style>${emailStyles}</style>
+    </head>
+    <body>
+      <div class="email-container">
+        <div class="header">
+          <h1>${BUSINESS_INFO.name}</h1>
+        </div>
+
+        <div class="content">
+${content}
+        </div>
+
+        <div class="footer">
+          <div class="footer-info">
+            <strong>${BUSINESS_INFO.name}</strong><br>
+            ${BUSINESS_INFO.address}<br>
+            ${BUSINESS_INFO.postalCode}<br>
+            Telefone: ${BUSINESS_INFO.phone}
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+function getDetailsBox(params: EmailTemplateParams, heading = 'Detalhes da Marcação'): string {
+  return `
+          <div class="info-box">
+            <h3>${heading}</h3>
+            <div class="info-row">
+              <span class="info-label">Serviço:</span>
+              <span class="info-value">${params.service}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Barbeiro:</span>
+              <span class="info-value">${params.barber}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Data:</span>
+              <span class="info-value">${params.date}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Hora:</span>
+              <span class="info-value">${params.time}</span>
+            </div>
+            ${params.duration ? `
+            <div class="info-row">
+              <span class="info-label">Duração:</span>
+              <span class="info-value">${params.duration === '1h' ? '1 hora (2 pessoas)' : '30 minutos'}</span>
+            </div>
+            ` : ''}
+          </div>`;
+}
+
+// Cliente remarcou: confirmação com o horário novo
+export function getRescheduleConfirmationTemplate(params: EmailTemplateParams): string {
+  return wrapEmail('Marcação Remarcada', `
+          <p class="greeting">Olá ${params.name},</p>
+
+          <p>A sua marcação foi alterada com sucesso. Fica assim:</p>
+${getDetailsBox(params, 'Nova Marcação')}
+
+          ${params.previousDate ? `
+          <p style="color: #666; font-size: 14px;">
+            Horário anterior: ${params.previousDate} às ${params.previousTime} (já libertado).
+          </p>
+          ` : ''}
+
+          <p>Aguardamos a sua visita.</p>
+
+          <div class="divider"></div>
+${getManageBlock(params.manageUrl, 'Precisa de alterar outra vez?')}
+  `);
+}
+
+// Cliente cancelou: confirmação de que ficou sem marcação
+export function getCancellationConfirmationTemplate(params: EmailTemplateParams): string {
+  return wrapEmail('Marcação Cancelada', `
+          <p class="greeting">Olá ${params.name},</p>
+
+          <p>A sua marcação foi <strong>cancelada</strong> conforme pediu.</p>
+${getDetailsBox(params, 'Marcação Cancelada')}
+
+          <p>Quando quiser voltar, pode marcar de novo no nosso site.</p>
+
+          <p style="text-align: center; margin: 20px 0;">
+            <a href="${getSiteUrl()}" class="cta-button" style="color: #ffffff;">
+              Fazer nova marcação
+            </a>
+          </p>
+
+          <p><strong>A Barbearia Cabanitas agradece a sua preferência.</strong></p>
+  `);
+}
+
+// Aviso à barbearia de que um cliente mexeu na marcação sozinho
+export function getBookingChangeNotificationTemplate(
+  params: EmailTemplateParams & { changeType: 'reschedule' | 'cancel' }
+): string {
+  const isCancel = params.changeType === 'cancel';
+  const title = isCancel ? 'Marcação cancelada pelo cliente' : 'Marcação remarcada pelo cliente';
+
+  return wrapEmail(title, `
+          <p class="greeting">${title}</p>
+
+          <p>
+            O cliente <strong>${params.name}</strong> ${isCancel ? 'cancelou' : 'alterou'} a marcação
+            através do link do email.
+          </p>
+${getDetailsBox(params, isCancel ? 'Marcação Cancelada' : 'Novo Horário')}
+
+          ${params.previousDate ? `
+          <div class="info-box" style="border-left-color: #999;">
+            <h3>Horário Anterior</h3>
+            <div class="info-row">
+              <span class="info-label">Data:</span>
+              <span class="info-value">${params.previousDate}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Hora:</span>
+              <span class="info-value">${params.previousTime}</span>
+            </div>
+          </div>
+          ` : ''}
+
+          <div class="info-box">
+            <h3>Contactos</h3>
+            <div class="info-row">
+              <span class="info-label">Telefone:</span>
+              <span class="info-value">${params.phone || '-'}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Email:</span>
+              <span class="info-value">${params.email || '-'}</span>
+            </div>
+            ${params.bookingId ? `
+            <div class="info-row">
+              <span class="info-label">Marcação nº:</span>
+              <span class="info-value">${params.bookingId}</span>
+            </div>
+            ` : ''}
+          </div>
+  `);
+}
+
+// Widget detetou marcação existente: enviar o link em vez de mostrar dados no ecrã
+export function getManageLinkTemplate(params: EmailTemplateParams): string {
+  return wrapEmail('A Sua Marcação', `
+          <p class="greeting">Olá ${params.name},</p>
+
+          <p>
+            Pediu o link para gerir a sua marcação na <strong>${BUSINESS_INFO.name}</strong>.
+            Aqui está:
+          </p>
+${getDetailsBox(params)}
+
+${getManageBlock(params.manageUrl, 'Para mudar o dia, a hora, ou cancelar:')}
+
+          <div class="divider"></div>
+
+          <p style="color: #999; font-size: 13px;">
+            Se não foi você que pediu este email, ignore-o — ninguém consegue alterar
+            a sua marcação sem este link.
+          </p>
+  `);
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { bookingDb } from "@/lib/db";
 import { sendEmail } from "@/lib/email";
 import { getReminderEmailTemplate, getReviewEmailTemplate } from "@/lib/email-templates";
+import { getManageUrl } from "@/lib/booking-manage";
 
 // This endpoint should be called by a cron job
 // - Vercel Hobby Plan: Once per day only (configured to run at 9 AM: 0 9 * * *)
@@ -51,6 +52,11 @@ export async function GET(request: Request) {
               }),
               time: booking.time,
               duration: booking.duration || "30min",
+              // Link para remarcar/cancelar. Marcações anteriores à migração do
+              // token não o têm, e o template cai no telefone.
+              manageUrl: booking.manage_token
+                ? getManageUrl(booking.manage_token)
+                : undefined,
             }),
           });
 
