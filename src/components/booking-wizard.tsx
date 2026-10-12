@@ -146,10 +146,10 @@ export function BookingWizard() {
     await createBooking();
   };
 
-  // A pessoa escolheu qual das marcações quer alterar. O id não dá acesso a
-  // nada: o servidor revalida que pertence a estes contactos e envia o link
-  // para o email da marcação.
-  const handleChooseExisting = async (bookingId: number) => {
+  // Pede o link por email. Com bookingId quando a pessoa escolheu uma de várias;
+  // sem ele quando só existe uma. O id não dá acesso a nada por si só — o
+  // servidor revalida que pertence a estes contactos antes de enviar.
+  const requestManageLink = async (bookingId?: number) => {
     setIsSubmitting(true);
     try {
       const response = await fetch("/api/bookings/lookup", {
@@ -159,7 +159,7 @@ export function BookingWizard() {
           name: bookingData.name,
           phone: bookingData.phone,
           email: bookingData.email || null,
-          bookingId,
+          ...(bookingId ? { bookingId } : { send: true }),
         }),
       });
 
@@ -502,7 +502,7 @@ export function BookingWizard() {
                         <button
                           key={choice.id}
                           type="button"
-                          onClick={() => handleChooseExisting(choice.id)}
+                          onClick={() => requestManageLink(choice.id)}
                           disabled={isSubmitting}
                           className="w-full text-left p-4 rounded-lg border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-all disabled:opacity-50"
                         >
@@ -531,12 +531,34 @@ export function BookingWizard() {
                   </>
                 ) : (
                   <>
-                    <p className="text-sm text-gray-600">
-                      Encontrámos uma marcação futura associada a estes
-                      contactos.
-                    </p>
+                    {existingBooking?.emailSent === undefined && (
+                      <p className="text-sm text-gray-600">
+                        Encontrámos uma marcação futura associada a estes
+                        contactos.
+                      </p>
+                    )}
 
-                    {existingBooking?.emailSent ? (
+                    {existingBooking?.emailSent === undefined ? (
+                      // Ainda não foi pedido nada: só avisa. Quem está mesmo a
+                      // marcar para outra pessoa segue em frente sem receber
+                      // emails que não pediu.
+                      <div className="space-y-3">
+                        <p className="text-sm text-gray-600">
+                          Se o que queria era mudar o dia ou a hora dessa
+                          marcação, enviamos-lhe o link por email.
+                        </p>
+                        <Button
+                          onClick={() => requestManageLink()}
+                          disabled={isSubmitting}
+                          variant="outline"
+                          className="w-full py-4 text-base rounded-full border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          {isSubmitting
+                            ? "A enviar..."
+                            : "Quero alterar a que já tenho"}
+                        </Button>
+                      </div>
+                    ) : existingBooking.emailSent ? (
                       <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                         <p className="text-sm text-black font-medium">
                           Enviámos o link para {existingBooking.maskedEmail}

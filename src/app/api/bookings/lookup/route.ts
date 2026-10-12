@@ -100,11 +100,13 @@ async function sendManageLink(booking: Booking, fallbackEmail?: string | null) {
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { phone, email, name, bookingId } = body as {
+        const { phone, email, name, bookingId, send } = body as {
             phone?: string;
             email?: string;
             name?: string;
             bookingId?: number;
+            // O email só sai quando a pessoa o pede. Ver nota abaixo.
+            send?: boolean;
         };
 
         if (!phone && !email) {
@@ -185,11 +187,18 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const result = await sendManageLink(candidates[0], email);
-        return NextResponse.json(
-            { found: true, count: 1, ...result },
-            { status: 200 }
-        );
+        // Uma só marcação: enviar apenas se a pessoa tiver pedido
+        if (send) {
+            const result = await sendManageLink(candidates[0], email);
+            return NextResponse.json(
+                { found: true, count: 1, ...result },
+                { status: 200 }
+            );
+        }
+
+        // Primeira resposta: avisar que existe, sem enviar nada e sem revelar
+        // detalhes de quem não provou ser o dono.
+        return NextResponse.json({ found: true, count: 1 }, { status: 200 });
     } catch (error) {
         console.error("Error looking up booking:", error);
         return NextResponse.json(
