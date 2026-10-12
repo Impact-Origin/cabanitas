@@ -68,21 +68,22 @@ O servidor vai:
 ### Passo 4: Criar Utilizador Admin
 
 ```bash
-curl -X POST http://localhost:3001/api/admin/create \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123","secret":"create-admin-secret-2025"}'
+node scripts/create-admin.mjs <username>
 ```
+
+A password é pedida a seguir, sem aparecer no ecrã nem ficar no histórico da
+shell. Mínimo de 10 caracteres.
 
 **Resposta esperada:**
-```json
-{
-  "message": "Admin user created successfully",
-  "username": "admin",
-  "warning": "Please delete /api/admin/create route after setup"
-}
+```
+Administrador "<username>" criado. Já pode entrar em /admin/login
 ```
 
-⚠️ **Importante**: Após criar o admin, apague o ficheiro `/src/app/api/admin/create/route.ts` por segurança!
+ℹ️ Isto costumava ser uma rota HTTP (`POST /api/admin/create`), protegida apenas
+por um segredo escrito no código. Como o repositório é público, esse segredo era
+visível para qualquer pessoa, que podia assim criar uma conta de administrador e
+entrar no painel. A rota foi apagada e substituída por este script, que só corre
+em quem tem acesso à máquina e à `DATABASE_URL`.
 
 ---
 
